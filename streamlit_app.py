@@ -1,6 +1,9 @@
-import streamlit as st
+from controller.app_controller import AppController
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
+
+def main():
+    AppController().run()
+
+
+if __name__ == "__main__":
+    main()
