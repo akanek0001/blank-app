@@ -32,13 +32,13 @@ class APRPage:
         "CreatedAt_JST",
     ]
 
-    # 1行ずつOCRするためのモバイル座標
-    TX_BLOCK_LEFT_RATIO_MOBILE = 120 / 1170
-    TX_BLOCK_RIGHT_RATIO_MOBILE = 1050 / 1170
-    TX_BLOCK_BASE_TOP_RATIO_MOBILE = 470 / 2532
-    TX_BLOCK_HEIGHT_RATIO_MOBILE = 118 / 2532
-    TX_BLOCK_STEP_RATIO_MOBILE = 122 / 2532
-    TX_BLOCK_MAX_ROWS_MOBILE = 6
+    # 1320 x 2868 基準で再調整したモバイル取引ブロック座標
+    TX_BLOCK_LEFT_RATIO_MOBILE = 30 / 1320
+    TX_BLOCK_RIGHT_RATIO_MOBILE = 1275 / 1320
+    TX_BLOCK_BASE_TOP_RATIO_MOBILE = 390 / 2868
+    TX_BLOCK_HEIGHT_RATIO_MOBILE = 285 / 2868
+    TX_BLOCK_STEP_RATIO_MOBILE = 340 / 2868
+    TX_BLOCK_MAX_ROWS_MOBILE = 7
 
     def __init__(self, repo: Repository, engine: FinanceEngine, store: DataStore):
         self.repo = repo
@@ -310,23 +310,29 @@ class APRPage:
         )
 
     def _normalize_ocr_text(self, text: str) -> str:
-        return re.sub(r"[ \t\u3000]+", " ", str(text or "")).strip()
+        t = str(text or "")
+        t = t.replace("月 ", "月").replace(" 日", "日").replace(" at ", " at ")
+        t = re.sub(r"[ \t\u3000]+", " ", t)
+        return t.strip()
 
     def _extract_date_label(self, text: str) -> str:
         t = self._normalize_ocr_text(text)
+
         patterns = [
-            r"(\d{1,2}\s*月\s*\d{1,2}\s*日?)",
+            r"(\d{1,2}\s*月\s*\d{1,2})",
+            r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
             r"(\d{1,2}/\d{1,2})",
             r"(\d{1,2}-\d{1,2})",
         ]
         for pat in patterns:
             m = re.search(pat, t)
             if m:
-                return self._normalize_ocr_text(m.group(1))
+                return self._normalize_ocr_text(m.group(1)).replace(" ", "")
         return ""
 
     def _extract_time_label(self, text: str) -> str:
         t = self._normalize_ocr_text(text)
+
         patterns = [
             r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))",
             r"(\d{1,2}:\d{2})",
@@ -339,10 +345,13 @@ class APRPage:
 
     def _extract_type_label(self, text: str) -> str:
         t = self._normalize_ocr_text(text)
+
         if "受け取ったUSDC" in t:
             return "受け取ったUSDC"
         if "トークンを受け取りました" in t:
             return "トークンを受け取りました"
+        if "承認" in t:
+            return "承認"
         if "USDC" in t:
             return "USDC"
         return ""
@@ -359,7 +368,7 @@ class APRPage:
 
         vals = U.extract_usd_candidates(t)
         if vals:
-            positives = [float(v) for v in vals if float(v) > 0]
+            positives = [float(v) for v in vals if float(v) >= 0]
             if positives:
                 return max(positives)
         return None
@@ -416,9 +425,17 @@ class APRPage:
             amount_usd = self._extract_amount_usd(raw_text)
             token_amount, token_symbol = self._extract_token_amount_and_symbol(raw_text)
 
-            if amount_usd is None or amount_usd <= 0:
+            if amount_usd is None:
                 continue
-            if not date_label or not time_label or not type_label:
+            if amount_usd <= 0:
+                continue
+            if not date_label:
+                continue
+            if not time_label:
+                continue
+            if not type_label:
+                continue
+            if type_label == "承認":
                 continue
 
             unique_key = self._make_tx_block_key(date_label, time_label, type_label, amount_usd)
@@ -477,6 +494,7 @@ class APRPage:
             else:
                 existing_keys.add(unique_key)
                 total_new += amount_usd
+
                 new_sheet_rows.append(
                     [
                         unique_key,
