@@ -36,7 +36,7 @@ class APRPage:
     # 1170 x 2532 基準 / 3領域OCR方式
     # 重複判定用に Date / Time / Type / USD を取る
     # =========================================================
-    TX_SCAN_BASE_TOP_RATIO_MOBILE = 345 / 2532
+TX_SCAN_BASE_TOP_RATIO_MOBILE = 345 / 2532
 TX_SCAN_STEP_RATIO_MOBILE = 122 / 2532
 TX_SCAN_MAX_ROWS_MOBILE = 10
 
