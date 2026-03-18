@@ -32,12 +32,14 @@ class APRPage:
         "CreatedAt_JST",
     ]
 
-    # 1320 x 2868 基準で再調整したモバイル取引ブロック座標
-    TX_BLOCK_LEFT_RATIO_MOBILE = 30 / 1320
-    TX_BLOCK_RIGHT_RATIO_MOBILE = 1275 / 1320
-    TX_BLOCK_BASE_TOP_RATIO_MOBILE = 390 / 2868
-    TX_BLOCK_HEIGHT_RATIO_MOBILE = 285 / 2868
-    TX_BLOCK_STEP_RATIO_MOBILE = 340 / 2868
+    # ---------------------------------------------------------
+    # 取引履歴OCR用ブロック座標（再調整版）
+    # ---------------------------------------------------------
+    TX_BLOCK_LEFT_RATIO_MOBILE = 0.020
+    TX_BLOCK_RIGHT_RATIO_MOBILE = 0.970
+    TX_BLOCK_BASE_TOP_RATIO_MOBILE = 0.128
+    TX_BLOCK_HEIGHT_RATIO_MOBILE = 0.108
+    TX_BLOCK_STEP_RATIO_MOBILE = 0.121
     TX_BLOCK_MAX_ROWS_MOBILE = 7
 
     def __init__(self, repo: Repository, engine: FinanceEngine, store: DataStore):
@@ -291,7 +293,7 @@ class APRPage:
             ws.append_row(row, value_input_option="USER_ENTERED")
 
     # =========================================================
-    # 行ブロックOCR
+    # 取引履歴 行ブロックOCR
     # =========================================================
     def _ocr_text_from_ratio_box(
         self,
@@ -311,7 +313,11 @@ class APRPage:
 
     def _normalize_ocr_text(self, text: str) -> str:
         t = str(text or "")
-        t = t.replace("月 ", "月").replace(" 日", "日").replace(" at ", " at ")
+        t = t.replace("月 ", "月")
+        t = t.replace(" 日", "日")
+        t = t.replace(" at ", " ")
+        t = t.replace("午前", "am")
+        t = t.replace("午後", "pm")
         t = re.sub(r"[ \t\u3000]+", " ", t)
         return t.strip()
 
@@ -319,15 +325,17 @@ class APRPage:
         t = self._normalize_ocr_text(text)
 
         patterns = [
-            r"(\d{1,2}\s*月\s*\d{1,2})",
             r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
+            r"(\d{1,2}\s*月\s*\d{1,2})",
             r"(\d{1,2}/\d{1,2})",
             r"(\d{1,2}-\d{1,2})",
         ]
+
         for pat in patterns:
             m = re.search(pat, t)
             if m:
                 return self._normalize_ocr_text(m.group(1)).replace(" ", "")
+
         return ""
 
     def _extract_time_label(self, text: str) -> str:
@@ -337,10 +345,12 @@ class APRPage:
             r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))",
             r"(\d{1,2}:\d{2})",
         ]
+
         for pat in patterns:
             m = re.search(pat, t)
             if m:
                 return self._normalize_ocr_text(m.group(1)).lower()
+
         return ""
 
     def _extract_type_label(self, text: str) -> str:
@@ -354,6 +364,7 @@ class APRPage:
             return "承認"
         if "USDC" in t:
             return "USDC"
+
         return ""
 
     def _extract_amount_usd(self, text: str) -> Optional[float]:
@@ -371,6 +382,7 @@ class APRPage:
             positives = [float(v) for v in vals if float(v) >= 0]
             if positives:
                 return max(positives)
+
         return None
 
     def _extract_token_amount_and_symbol(self, text: str) -> Tuple[Optional[float], str]:
@@ -415,6 +427,10 @@ class APRPage:
             left, top, right, bottom = self._tx_block_ratios(i)
             raw_text = self._ocr_text_from_ratio_box(file_bytes, left, top, right, bottom)
             raw_text = self._normalize_ocr_text(raw_text)
+
+            # デバッグ確認用
+            with st.expander(f"行{i + 1} OCR生テキスト", expanded=False):
+                st.text(raw_text or "(empty)")
 
             if not raw_text:
                 continue
@@ -522,10 +538,7 @@ class APRPage:
                     "Token_Symbol": row["token_symbol"],
                     "Unique_Key": unique_key,
                     "Status": "重複" if is_duplicate else "新規",
-                    "Crop": (
-                        f"L={row['left_ratio']:.3f}, T={row['top_ratio']:.3f}, "
-                        f"R={row['right_ratio']:.3f}, B={row['bottom_ratio']:.3f}"
-                    ),
+                    "Crop": f"L={row['left_ratio']:.3f}, T={row['top_ratio']:.3f}, R={row['right_ratio']:.3f}, B={row['bottom_ratio']:.3f}",
                 }
             )
 
