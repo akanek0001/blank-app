@@ -1,19 +1,32 @@
-# 🎈 Blank app template
+# APR資産運用管理システム（分割版）
 
-A simple Streamlit app template for you to modify!
+## 構成
+- `app.py` : 起動入口
+- `config.py` : 定数定義
+- `core/` : 共通処理（認証・ユーティリティ）
+- `services/` : 外部接続（LINE / OCR / Google Sheets）
+- `repository/` : シート読み書き
+- `engine/` : APR計算ロジック
+- `store/` : セッション / データ再読込
+- `ui/` : 画面別UI
+- `controller/` : 画面遷移と起動制御
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+## 起動
+```bash
+cd apr_system
+streamlit run app.py
+```
 
-### How to run it on your own machine
+## 追加・修正しやすい場所
+- OCR関連: `services/external_service.py`, `ui/apr.py`, `ui/help.py`
+- LINE送信関連: `services/external_service.py`, `ui/apr.py`, `ui/cash.py`, `ui/admin.py`
+- APR計算式: `engine/finance_engine.py`
+- シート列追加: `config.py`, `repository/repository.py`
+- セッション関連: `config.py`, `store/datastore.py`
 
-1. Install the requirements
-
-   ```
-   $ pip install -r requirements.txt
-   ```
-
-2. Run the app
-
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+## この版で追加した整理
+- 画面ごとに UI を分離
+- 計算ロジックを分離
+- Google Sheets 処理を分離
+- 後から機能追加しやすい構成へ整理
+- 元コードの機能を維持しやすい責務分離
