@@ -33,35 +33,30 @@ class APRPage:
     ]
 
     # =========================================================
-    # 1320 x 2868 基準 / 4分割OCR方式
+    # 1170 x 2532 基準 / 3領域OCR方式
+    # 重複判定用に Date / Time / Type / USD を取る
     # =========================================================
-    TX_BASE_TOP_RATIO_MOBILE = 390 / 2868
-    TX_STEP_RATIO_MOBILE = 340 / 2868
-    TX_MAX_ROWS_MOBILE = 7
+    TX_SCAN_BASE_TOP_RATIO_MOBILE = 160 / 2532
+    TX_SCAN_STEP_RATIO_MOBILE = 122 / 2532
+    TX_SCAN_MAX_ROWS_MOBILE = 10
 
     # 日付 + 時間
-    TX_DATE_LEFT_RATIO_MOBILE = 70 / 1320
-    TX_DATE_RIGHT_RATIO_MOBILE = 380 / 1320
-    TX_DATE_TOP_OFFSET_RATIO_MOBILE = 0 / 2868
-    TX_DATE_BOTTOM_OFFSET_RATIO_MOBILE = 95 / 2868
+    TX_DATE_LEFT_RATIO_MOBILE = 20 / 1170
+    TX_DATE_RIGHT_RATIO_MOBILE = 360 / 1170
+    TX_DATE_TOP_OFFSET_RATIO_MOBILE = 0 / 2532
+    TX_DATE_BOTTOM_OFFSET_RATIO_MOBILE = 52 / 2532
 
     # 種別
-    TX_TYPE_LEFT_RATIO_MOBILE = 190 / 1320
-    TX_TYPE_RIGHT_RATIO_MOBILE = 760 / 1320
-    TX_TYPE_TOP_OFFSET_RATIO_MOBILE = 55 / 2868
-    TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE = 155 / 2868
+    TX_TYPE_LEFT_RATIO_MOBILE = 110 / 1170
+    TX_TYPE_RIGHT_RATIO_MOBILE = 610 / 1170
+    TX_TYPE_TOP_OFFSET_RATIO_MOBILE = 28 / 2532
+    TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE = 95 / 2532
 
-    # USD金額
-    TX_USD_LEFT_RATIO_MOBILE = 1080 / 1320
-    TX_USD_RIGHT_RATIO_MOBILE = 1275 / 1320
-    TX_USD_TOP_OFFSET_RATIO_MOBILE = 45 / 2868
-    TX_USD_BOTTOM_OFFSET_RATIO_MOBILE = 130 / 2868
-
-    # トークン数量
-    TX_TOKEN_LEFT_RATIO_MOBILE = 900 / 1320
-    TX_TOKEN_RIGHT_RATIO_MOBILE = 1275 / 1320
-    TX_TOKEN_TOP_OFFSET_RATIO_MOBILE = 120 / 2868
-    TX_TOKEN_BOTTOM_OFFSET_RATIO_MOBILE = 220 / 2868
+    # $金額
+    TX_USD_LEFT_RATIO_MOBILE = 810 / 1170
+    TX_USD_RIGHT_RATIO_MOBILE = 1050 / 1170
+    TX_USD_TOP_OFFSET_RATIO_MOBILE = 18 / 2532
+    TX_USD_BOTTOM_OFFSET_RATIO_MOBILE = 72 / 2532
 
     def __init__(self, repo: Repository, engine: FinanceEngine, store: DataStore):
         self.repo = repo
@@ -212,13 +207,11 @@ class APRPage:
                     st.success(f"流動性: {U.fmt_usd(float(smart['total_liquidity']))}")
                 else:
                     st.warning("流動性: 未検出")
-
             with c_b:
                 if smart["yesterday_profit"] is not None:
                     st.success(f"昨日の収益: {U.fmt_usd(float(smart['yesterday_profit']))}")
                 else:
                     st.warning("昨日の収益: 未検出")
-
             with c_c:
                 if smart["apr_value"] is not None:
                     st.success(f"APR: {float(smart['apr_value']):.2f}%")
@@ -314,7 +307,7 @@ class APRPage:
             ws.append_row(row, value_input_option="USER_ENTERED")
 
     # =========================================================
-    # 4分割OCR
+    # 3領域OCR
     # =========================================================
     def _normalize_ocr_text(self, text: str) -> str:
         t = str(text or "")
@@ -326,25 +319,8 @@ class APRPage:
         t = re.sub(r"[ \t\u3000]+", " ", t)
         return t.strip()
 
-    def _ocr_ratio_region(
-        self,
-        file_bytes: bytes,
-        left_ratio: float,
-        top_ratio: float,
-        right_ratio: float,
-        bottom_ratio: float,
-    ) -> str:
-        txt = ExternalService.ocr_space_extract_text_with_crop(
-            file_bytes=file_bytes,
-            crop_left_ratio=left_ratio,
-            crop_top_ratio=top_ratio,
-            crop_right_ratio=right_ratio,
-            crop_bottom_ratio=bottom_ratio,
-        )
-        return self._normalize_ocr_text(txt)
-
     def _row_top_ratio(self, row_index: int) -> float:
-        return self.TX_BASE_TOP_RATIO_MOBILE + (self.TX_STEP_RATIO_MOBILE * row_index)
+        return self.TX_SCAN_BASE_TOP_RATIO_MOBILE + (self.TX_SCAN_STEP_RATIO_MOBILE * row_index)
 
     def _build_region_box(
         self,
@@ -363,7 +339,6 @@ class APRPage:
 
     def _extract_date_label(self, text: str) -> str:
         t = self._normalize_ocr_text(text)
-
         patterns = [
             r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
             r"(\d{1,2}\s*月\s*\d{1,2})",
@@ -378,7 +353,6 @@ class APRPage:
 
     def _extract_time_label(self, text: str) -> str:
         t = self._normalize_ocr_text(text)
-
         patterns = [
             r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))",
             r"(\d{1,2}:\d{2})",
@@ -423,7 +397,6 @@ class APRPage:
 
     def _extract_token_amount_and_symbol(self, text: str) -> Tuple[Optional[float], str]:
         t = self._normalize_ocr_text(text)
-
         patterns = [
             r"(\d+(?:,\d{3})*(?:\.\d+)?)\s*(USDC|ETH|BTC|USDT)",
             r"(USDC|ETH|BTC|USDT)\s*(\d+(?:,\d{3})*(?:\.\d+)?)",
@@ -435,7 +408,6 @@ class APRPage:
 
             g1 = str(m.group(1)).strip()
             g2 = str(m.group(2)).strip()
-
             try:
                 if re.match(r"^\d", g1):
                     return float(g1.replace(",", "")), g2.upper()
@@ -448,10 +420,10 @@ class APRPage:
     def _make_tx_block_key(self, date_label: str, time_label: str, type_label: str, amount_usd: float) -> str:
         return f"{date_label}|{time_label}|{type_label}|{float(amount_usd):.2f}"
 
-    def _ocr_transaction_rows_split(self, file_bytes: bytes) -> List[Dict[str, Any]]:
+    def _ocr_transaction_rows_three_regions(self, file_bytes: bytes) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
 
-        for i in range(self.TX_MAX_ROWS_MOBILE):
+        for i in range(self.TX_SCAN_MAX_ROWS_MOBILE):
             row_top = self._row_top_ratio(i)
 
             date_box = self._build_region_box(
@@ -475,32 +447,17 @@ class APRPage:
                 top_offset_ratio=self.TX_USD_TOP_OFFSET_RATIO_MOBILE,
                 bottom_offset_ratio=self.TX_USD_BOTTOM_OFFSET_RATIO_MOBILE,
             )
-            token_box = self._build_region_box(
-                row_top=row_top,
-                left_ratio=self.TX_TOKEN_LEFT_RATIO_MOBILE,
-                right_ratio=self.TX_TOKEN_RIGHT_RATIO_MOBILE,
-                top_offset_ratio=self.TX_TOKEN_TOP_OFFSET_RATIO_MOBILE,
-                bottom_offset_ratio=self.TX_TOKEN_BOTTOM_OFFSET_RATIO_MOBILE,
-            )
 
-            date_text = self._ocr_crop_text(file_bytes, date_box)
-            type_text = self._ocr_crop_text(file_bytes, type_box)
-            usd_text = self._ocr_crop_text(file_bytes, usd_box)
-            token_text = self._ocr_crop_text(file_bytes, token_box)
+            date_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, date_box))
+            type_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, type_box))
+            usd_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, usd_box))
 
-            date_text = self._normalize_ocr_text(date_text)
-            type_text = self._normalize_ocr_text(type_text)
-            usd_text = self._normalize_ocr_text(usd_text)
-            token_text = self._normalize_ocr_text(token_text)
-
-            with st.expander(f"行{i + 1} OCR分割結果", expanded=False):
+            with st.expander(f"行{i + 1} OCR結果", expanded=False):
                 st.write({"date_text": date_text or "(empty)"})
                 st.write({"type_text": type_text or "(empty)"})
                 st.write({"usd_text": usd_text or "(empty)"})
-                st.write({"token_text": token_text or "(empty)"})
 
-            joined_raw = "\n".join([date_text, type_text, usd_text, token_text]).strip()
-
+            joined_raw = "\n".join([date_text, type_text, usd_text]).strip()
             if not joined_raw:
                 continue
 
@@ -508,7 +465,6 @@ class APRPage:
             time_label = self._extract_time_label(date_text or joined_raw)
             type_label = self._extract_type_label(type_text or joined_raw)
             amount_usd = self._extract_amount_usd(usd_text or joined_raw)
-            token_amount, token_symbol = self._extract_token_amount_and_symbol(token_text or joined_raw)
 
             if amount_usd is None:
                 continue
@@ -520,7 +476,7 @@ class APRPage:
                 continue
             if not type_label:
                 continue
-            if type_label == "承認":
+            if type_label != "受け取ったUSDC":
                 continue
 
             unique_key = self._make_tx_block_key(date_label, time_label, type_label, amount_usd)
@@ -532,26 +488,22 @@ class APRPage:
                     "time_label": time_label,
                     "type_label": type_label,
                     "amount_usd": float(amount_usd),
-                    "token_amount": token_amount,
-                    "token_symbol": token_symbol,
+                    "token_amount": None,
+                    "token_symbol": "",
                     "unique_key": unique_key,
                     "raw_text": joined_raw,
-                    "date_box": date_box,
-                    "type_box": type_box,
-                    "usd_box": usd_box,
-                    "token_box": token_box,
                 }
             )
 
         return rows
 
-    def _process_transaction_ocr_split(
+    def _process_transaction_ocr_three_regions(
         self,
         file_bytes: bytes,
         source_image: str,
         source_project: str,
     ) -> None:
-        tx_rows = self._ocr_transaction_rows_split(file_bytes)
+        tx_rows = self._ocr_transaction_rows_three_regions(file_bytes)
 
         if not tx_rows:
             st.warning("日付・時間・種別・金額を含む取引明細を抽出できませんでした。")
@@ -586,8 +538,8 @@ class APRPage:
                         row["time_label"],
                         row["type_label"],
                         amount_usd,
-                        "" if row["token_amount"] is None else float(row["token_amount"]),
-                        row["token_symbol"],
+                        "",
+                        "",
                         source_image,
                         source_project,
                         row["raw_text"],
@@ -602,8 +554,6 @@ class APRPage:
                     "Time_Label": row["time_label"],
                     "Type_Label": row["type_label"],
                     "Amount_USD": f"{amount_usd:.2f}",
-                    "Token_Amount": "" if row["token_amount"] is None else row["token_amount"],
-                    "Token_Symbol": row["token_symbol"],
                     "Unique_Key": unique_key,
                     "Status": "重複" if is_duplicate else "新規",
                 }
@@ -612,7 +562,7 @@ class APRPage:
         if new_sheet_rows:
             self._append_ocr_tx_rows(new_sheet_rows)
 
-        st.markdown("#### 4分割OCR結果")
+        st.markdown("#### 3領域OCR結果")
         st.dataframe(pd.DataFrame(view_rows), use_container_width=True, hide_index=True)
 
         c1, c2, c3 = st.columns(3)
@@ -761,12 +711,12 @@ class APRPage:
 
         st.markdown(
             f"""
-現在の4分割OCR座標（モバイル）
-- BaseTop : {self.TX_BASE_TOP_RATIO_MOBILE:.3f}
-- Step    : {self.TX_STEP_RATIO_MOBILE:.3f}
-- MaxRows : {self.TX_MAX_ROWS_MOBILE}
+現在の3領域OCR座標（モバイル）
+- BaseTop : {self.TX_SCAN_BASE_TOP_RATIO_MOBILE:.3f}
+- Step    : {self.TX_SCAN_STEP_RATIO_MOBILE:.3f}
+- MaxRows : {self.TX_SCAN_MAX_ROWS_MOBILE}
 
-日付領域
+日付+時間領域
 - Left  : {self.TX_DATE_LEFT_RATIO_MOBILE:.3f}
 - Right : {self.TX_DATE_RIGHT_RATIO_MOBILE:.3f}
 
@@ -777,19 +727,15 @@ class APRPage:
 USD領域
 - Left  : {self.TX_USD_LEFT_RATIO_MOBILE:.3f}
 - Right : {self.TX_USD_RIGHT_RATIO_MOBILE:.3f}
-
-トークン領域
-- Left  : {self.TX_TOKEN_LEFT_RATIO_MOBILE:.3f}
-- Right : {self.TX_TOKEN_RIGHT_RATIO_MOBILE:.3f}
 """
         )
 
         c_tx1, c_tx2 = st.columns(2)
 
         with c_tx1:
-            if st.button("現在の画像から4分割OCR集計", use_container_width=True, key="ocr_tx_current_split"):
+            if st.button("現在の画像から3領域OCR集計", use_container_width=True, key="ocr_tx_current_three"):
                 if selected_evidence_bytes:
-                    self._process_transaction_ocr_split(
+                    self._process_transaction_ocr_three_regions(
                         selected_evidence_bytes,
                         selected_evidence_name or "selected_image",
                         project,
@@ -798,16 +744,16 @@ USD領域
                     st.warning("先にフォルダ画像を選ぶか、画像をアップロードしてください。")
 
         with c_tx2:
-            if st.button("最新画像から4分割OCR集計", use_container_width=True, key="ocr_tx_latest_split"):
+            if st.button("最新画像から3領域OCR集計", use_container_width=True, key="ocr_tx_latest_three"):
                 if image_files:
                     latest_file = image_files[0]
                     try:
                         file_bytes = latest_file.read_bytes()
                         st.session_state["apr_folder_selected_name"] = latest_file.name
                         st.session_state["apr_folder_selected_bytes"] = file_bytes
-                        self._process_transaction_ocr_split(file_bytes, latest_file.name, project)
+                        self._process_transaction_ocr_three_regions(file_bytes, latest_file.name, project)
                     except Exception as e:
-                        st.error(f"最新画像の4分割OCRでエラー: {e}")
+                        st.error(f"最新画像の3領域OCRでエラー: {e}")
                 else:
                     st.warning("監視フォルダに画像がありません。")
 
