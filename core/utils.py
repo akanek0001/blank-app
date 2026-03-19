@@ -38,15 +38,30 @@ class U:
 
     @staticmethod
     def to_num_series(s: pd.Series, default: float = 0.0) -> pd.Series:
-        out = pd.to_numeric(
-            s.astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("$", "", regex=False)
-            .str.replace("%", "", regex=False)
-            .str.strip(),
-            errors="coerce",
-        )
-        return out.fillna(default)
+        if s is None:
+            return pd.Series(dtype="float64")
+
+        out = s.copy().astype(str)
+        out = out.str.strip()
+        out = out.str.replace(",", "", regex=False)
+        out = out.str.replace("$", "", regex=False)
+        out = out.str.replace("¥", "", regex=False)
+        out = out.str.replace("%", "", regex=False)
+        out = out.replace({
+            "": None,
+            "None": None,
+            "none": None,
+            "nan": None,
+            "NaN": None,
+            "NULL": None,
+            "null": None,
+            "False": None,
+            "TRUE": "1",
+            "True": "1",
+            "FALSE": "0",
+        })
+        out = pd.to_numeric(out, errors="coerce")
+        return out.fillna(float(default))
 
     @staticmethod
     def truthy(v: Any) -> bool:

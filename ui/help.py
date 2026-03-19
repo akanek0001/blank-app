@@ -12,38 +12,25 @@ from store.datastore import DataStore
 
 
 class HelpPage:
-
-    OCR_HISTORY_SHEET = "OCR_Transaction_History"
-
     def __init__(self, repo: Repository, store: DataStore):
         self.repo = repo
         self.store = store
 
-
-    def render(self, gs: GSheetService, settings_df: pd.DataFrame):
-
-        st.subheader("❓ 操作マニュアル / ヘルプ")
+    def render(self, gs: GSheetService, settings_df: pd.DataFrame) -> None:
+        st.subheader("❓ ヘルプ / 使い方")
         st.caption(f"{AppConfig.RANK_LABEL} / 管理者: {AdminAuth.current_label()}")
-
-
         st.markdown("""
-このページでは **アプリの設定方法 / OCR調整 / シート構造 / APIキー取得場所** を説明します。
-
-変更は基本的に **コードではなくシートかSecretsで行う設計**です。
+このアプリは、APR運用の記録、入出金、メンバー管理、LINE通知をまとめて扱う管理システムです。
+左メニューの **📊 ダッシュボード / 📈 APR / 💸 入金/出金 / ⚙️ 管理 / ❓ ヘルプ** で画面を切り替えます。
 """)
-
-
-        # --------------------------------------------------------
-        # 接続情報
-        # --------------------------------------------------------
-
-        with st.expander("接続情報"):
-
-            st.code(f"""
-Settings = {gs.names.SETTINGS}
-Members = {gs.names.MEMBERS}
-Ledger = {gs.names.LEDGER}
-LineUsers = {gs.names.LINEUSERS}
+        with st.expander("1. 現在の接続情報", expanded=False):
+            st.code(f"""参照シート
+Settings           = {gs.names.SETTINGS}
+Members            = {gs.names.MEMBERS}
+Ledger             = {gs.names.LEDGER}
+LineUsers          = {gs.names.LINEUSERS}
+APR_Summary        = {gs.names.APR_SUMMARY}
+SmartVault_History = {gs.names.SMARTVAULT_HISTORY}
 
 Spreadsheet ID
 {gs.spreadsheet_id}
@@ -51,297 +38,55 @@ Spreadsheet ID
 Spreadsheet URL
 {gs.spreadsheet_url()}
 """)
-
-
-        # --------------------------------------------------------
-        # 外部サービス
-        # --------------------------------------------------------
-
-        with st.expander("APIキー取得先"):
-
+        with st.expander("2. シート構成", expanded=False):
+            for key, title in [("SETTINGS","Settings"),("MEMBERS","Members"),("LEDGER","Ledger"),("LINEUSERS","LineUsers"),("APR_SUMMARY","APR Summary"),("SMARTVAULT_HISTORY","SmartVault_History")]:
+                st.markdown(f"### {title}")
+                st.code("\t".join(AppConfig.HEADERS[key]))
+        with st.expander("3. Compound_Timing の意味", expanded=False):
             st.markdown("""
-Google Cloud  
-https://console.cloud.google.com
+- `daily`
+  APR確定時に元本へ即時加算します。次回以降は増えた元本で計算します。
 
-Google Sheets  
-https://docs.google.com/spreadsheets
+- `monthly`
+  APR確定時は Ledger に記録のみ行います。元本への反映は APR画面の「未反映APRを元本へ反映」でまとめて行います。
 
-LINE Developers  
-https://developers.line.biz/console
-
-OCR.space  
-https://ocr.space/ocrapi
-
-ImgBB  
-https://api.imgbb.com
+- `none`
+  単利です。APRは Ledger に記録しますが、元本には加算しません。
 """)
+        with st.expander("4. APR計算ロジック", expanded=False):
+            st.markdown("""
+### PERSONAL
+`DailyAPR = Principal × (最終APR% / 100) × Rank係数 ÷ 365`
 
+### GROUP（PERSONAL以外）
+`グループ総配当 = グループ総元本 × (最終APR% / 100) × Net_Factor ÷ 365`
 
-        # --------------------------------------------------------
-        # Secrets
-        # --------------------------------------------------------
+`1人あたり配当 = グループ総配当 ÷ 人数`
 
-        with st.expander("Secrets 設定例"):
-
-            st.code("""
-[connections.gsheets]
-spreadsheet = "YOUR_SPREADSHEET_ID"
-
-[admin]
-pin = "0000"
-
-[[admin.users]]
-name = "Admin A"
-pin = "1111"
-namespace = "A"
-
-[[admin.users]]
-name = "Admin B"
-pin = "2222"
-namespace = "B"
-
-[line.tokens]
-A = "LINE_TOKEN_A"
-B = "LINE_TOKEN_B"
-
-[imgbb]
-api_key = "IMGBB_API_KEY"
-
-[ocrspace]
-api_key = "OCR_SPACE_API_KEY"
+### 重複防止
+同日・同一プロジェクト・同一人物の APR は Ledger を見て1回だけ記録します。
 """)
-
-
-        # --------------------------------------------------------
-        # シート構造
-        # --------------------------------------------------------
-
-        with st.expander("シート構造"):
-
-            st.markdown("Settings")
-
-            st.code("\t".join(AppConfig.HEADERS["SETTINGS"]))
-
-            st.markdown("Members")
-
-            st.code("\t".join(AppConfig.HEADERS["MEMBERS"]))
-
-            st.markdown("Ledger")
-
-            st.code("\t".join(AppConfig.HEADERS["LEDGER"]))
-
-
-        # --------------------------------------------------------
-        # OCR設定
-        # --------------------------------------------------------
-
-        with st.expander("OCR座標設定"):
-
+        with st.expander("5. Make連携", expanded=False):
+            st.markdown("`LINE Watch Events → HTTP(プロフィール取得) → Google Sheets Search Rows → Filter(0件のみ) → Google Sheets Add a Row`")
+            st.code("\t".join(AppConfig.HEADERS["LINEUSERS"]))
+        with st.expander("6. Settings自動修復", expanded=False):
+            if st.button("Settingsを自動修復", key="help_fix_settings", use_container_width=True):
+                try:
+                    self.repo.repair_settings(self.repo.load_settings())
+                    self.store.persist_and_refresh()
+                    st.success(f"{self.repo.gs.names.SETTINGS} を修復しました。")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Settings修復でエラー: {e}")
+        with st.expander("7. OCR設定（座標設定 + 赤枠プレビュー）", expanded=False):
             projects = self.repo.active_projects(settings_df)
-
             if not projects:
-
-                st.warning("Activeプロジェクトがありません")
-
+                st.warning("有効なプロジェクトがありません。")
                 return
-
-            project = st.selectbox(
-                "プロジェクト",
-                projects
-            )
-
-            row = settings_df[
-                settings_df["Project_Name"] == project
-            ].iloc[0]
-
-
-            st.markdown("### 現在の設定")
-
-            st.dataframe(
-                pd.DataFrame([row]),
-                use_container_width=True
-            )
-
-
-            # -------------------------
-            # PC
-            # -------------------------
-
-            st.markdown("### PC")
-
-            c1,c2,c3,c4 = st.columns(4)
-
-            pc_left = c1.number_input(
-                "Left",
-                0.0,1.0,
-                float(row["Crop_Left_Ratio_PC"]),
-                0.01
-            )
-
-            pc_top = c2.number_input(
-                "Top",
-                0.0,1.0,
-                float(row["Crop_Top_Ratio_PC"]),
-                0.01
-            )
-
-            pc_right = c3.number_input(
-                "Right",
-                0.0,1.0,
-                float(row["Crop_Right_Ratio_PC"]),
-                0.01
-            )
-
-            pc_bottom = c4.number_input(
-                "Bottom",
-                0.0,1.0,
-                float(row["Crop_Bottom_Ratio_PC"]),
-                0.01
-            )
-
-
-            # -------------------------
-            # Mobile
-            # -------------------------
-
-            st.markdown("### Mobile")
-
-            c5,c6,c7,c8 = st.columns(4)
-
-            mobile_left = c5.number_input(
-                "Left ",
-                0.0,1.0,
-                float(row["Crop_Left_Ratio_Mobile"]),
-                0.01
-            )
-
-            mobile_top = c6.number_input(
-                "Top ",
-                0.0,1.0,
-                float(row["Crop_Top_Ratio_Mobile"]),
-                0.01
-            )
-
-            mobile_right = c7.number_input(
-                "Right ",
-                0.0,1.0,
-                float(row["Crop_Right_Ratio_Mobile"]),
-                0.01
-            )
-
-            mobile_bottom = c8.number_input(
-                "Bottom ",
-                0.0,1.0,
-                float(row["Crop_Bottom_Ratio_Mobile"]),
-                0.01
-            )
-
-
-            # --------------------------------------------------
-            # 画像アップロード
-            # --------------------------------------------------
-
-            st.markdown("### OCR確認")
-
-            img = st.file_uploader(
-                "画像をアップロード",
-                type=["png","jpg","jpeg"]
-            )
-
-
-            if img:
-
-                file_bytes = img.getvalue()
-
-                st.markdown("元画像")
-
-                st.image(
-                    file_bytes,
-                    use_container_width=True
-                )
-
-
-                mobile_box = {
-                    "mobile":{
-                        "left":mobile_left,
-                        "top":mobile_top,
-                        "right":mobile_right,
-                        "bottom":mobile_bottom
-                    }
-                }
-
-                pc_box = {
-                    "pc":{
-                        "left":pc_left,
-                        "top":pc_top,
-                        "right":pc_right,
-                        "bottom":pc_bottom
-                    }
-                }
-
-
-                st.markdown("Mobile 赤枠")
-
-                st.image(
-                    U.draw_ocr_boxes(file_bytes,mobile_box),
-                    use_container_width=True
-                )
-
-
-                st.markdown("PC 赤枠")
-
-                st.image(
-                    U.draw_ocr_boxes(file_bytes,pc_box),
-                    use_container_width=True
-                )
-
-
-            # --------------------------------------------------
-            # 保存
-            # --------------------------------------------------
-
-            if st.button("OCR設定保存"):
-
-                idx = settings_df[
-                    settings_df["Project_Name"] == project
-                ].index[0]
-
-                settings_df.loc[idx,"Crop_Left_Ratio_PC"] = pc_left
-                settings_df.loc[idx,"Crop_Top_Ratio_PC"] = pc_top
-                settings_df.loc[idx,"Crop_Right_Ratio_PC"] = pc_right
-                settings_df.loc[idx,"Crop_Bottom_Ratio_PC"] = pc_bottom
-
-                settings_df.loc[idx,"Crop_Left_Ratio_Mobile"] = mobile_left
-                settings_df.loc[idx,"Crop_Top_Ratio_Mobile"] = mobile_top
-                settings_df.loc[idx,"Crop_Right_Ratio_Mobile"] = mobile_right
-                settings_df.loc[idx,"Crop_Bottom_Ratio_Mobile"] = mobile_bottom
-
-                self.repo.write_settings(settings_df)
-
-                self.store.persist_and_refresh()
-
-                st.success("保存しました")
-
-                st.rerun()
-
-
-        # --------------------------------------------------------
-        # 修復
-        # --------------------------------------------------------
-
-        with st.expander("Settings修復"):
-
-            if st.button("自動修復"):
-
-                self.repo.repair_settings(
-                    self.repo.load_settings()
-                )
-
-                self.store.persist_and_refresh()
-
-                st.success("修復しました")
-
-                st.rerun()
-
-
-        st.success("ヘルプページ読み込み完了")
+            ocr_project = st.selectbox("OCR設定対象プロジェクト", projects, key="help_ocr_project")
+            row_setting = settings_df[settings_df["Project_Name"] == ocr_project].iloc[0]
+            current_vals = pd.DataFrame([{k: row_setting.get(k, v) for k, v in {**AppConfig.OCR_DEFAULTS_PC, **AppConfig.OCR_DEFAULTS_MOBILE}.items()}])
+            st.dataframe(current_vals, use_container_width=True, hide_index=True)
+            preview = st.file_uploader("画像をアップロードすると赤枠プレビューします", type=["png", "jpg", "jpeg"], key="help_ocr_preview")
+            if preview is not None:
+                st.image(U.draw_ocr_boxes(preview.getvalue(), AppConfig.SMARTVAULT_BOXES_MOBILE), caption="SmartVault固定赤枠", use_container_width=True)
