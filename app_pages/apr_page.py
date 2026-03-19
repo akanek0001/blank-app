@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-import re
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +12,7 @@ from core.utils import U
 from engine.finance_engine import FinanceEngine
 from repository.repository import Repository
 from services.external_service import ExternalService
+from services.ocr_processor import OCRProcessor
 from store.datastore import DataStore
 
 
@@ -31,28 +31,6 @@ class APRPage:
         "OCR_Raw_Text",
         "CreatedAt_JST",
     ]
-
-    # =========================================================
-    # 3領域OCR（モバイル）座標 - 修正版
-    # =========================================================
-    TX_SCAN_BASE_TOP_RATIO_MOBILE = 430 / 2532
-    TX_SCAN_STEP_RATIO_MOBILE = 123 / 2532
-    TX_SCAN_MAX_ROWS_MOBILE = 10
-
-    TX_DATE_LEFT_RATIO_MOBILE = 0.02
-    TX_DATE_RIGHT_RATIO_MOBILE = 0.40
-    TX_DATE_TOP_OFFSET_RATIO_MOBILE = 0.00
-    TX_DATE_BOTTOM_OFFSET_RATIO_MOBILE = 0.03
-
-    TX_TYPE_LEFT_RATIO_MOBILE = 0.08
-    TX_TYPE_RIGHT_RATIO_MOBILE = 0.65
-    TX_TYPE_TOP_OFFSET_RATIO_MOBILE = 0.015
-    TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE = 0.05
-
-    TX_USD_LEFT_RATIO_MOBILE = 0.65
-    TX_USD_RIGHT_RATIO_MOBILE = 0.93
-    TX_USD_TOP_OFFSET_RATIO_MOBILE = 0.01
-    TX_USD_BOTTOM_OFFSET_RATIO_MOBILE = 0.04
 
     def __init__(self, repo: Repository, engine: FinanceEngine, store: DataStore):
         self.repo = repo
@@ -137,46 +115,8 @@ class APRPage:
         )
 
     # =========================================================
-    # OCR helpers
+    # File helpers
     # =========================================================
-    def _ocr_crop_text(self, file_bytes: bytes, box: Dict[str, float]) -> str:
-        return ExternalService.ocr_space_extract_text_with_crop(
-            file_bytes=file_bytes,
-            crop_left_ratio=box["left"],
-            crop_top_ratio=box["top"],
-            crop_right_ratio=box["right"],
-            crop_bottom_ratio=box["bottom"],
-        )
-
-    def _ocr_smartvault_mobile_metrics(self, file_bytes: bytes) -> Dict[str, Any]:
-        boxes = AppConfig.SMARTVAULT_BOXES_MOBILE
-        total_text = self._ocr_crop_text(file_bytes, boxes["TOTAL_LIQUIDITY"])
-        profit_text = self._ocr_crop_text(file_bytes, boxes["YESTERDAY_PROFIT"])
-        apr_text = self._ocr_crop_text(file_bytes, boxes["APR"])
-
-        total_vals = U.extract_usd_candidates(total_text)
-        profit_vals = U.extract_usd_candidates(profit_text)
-        apr_vals = U.extract_percent_candidates(apr_text)
-
-        total_liquidity = U.pick_total_liquidity(total_vals)
-        yesterday_profit = U.pick_yesterday_profit(profit_vals)
-        apr_value = apr_vals[0] if apr_vals else None
-        boxed_preview = U.draw_ocr_boxes(file_bytes, boxes)
-
-        return {
-            "boxes": boxes,
-            "total_text": total_text,
-            "profit_text": profit_text,
-            "apr_text": apr_text,
-            "total_vals": total_vals,
-            "profit_vals": profit_vals,
-            "apr_vals": apr_vals,
-            "total_liquidity": total_liquidity,
-            "yesterday_profit": yesterday_profit,
-            "apr_value": apr_value,
-            "boxed_preview": boxed_preview,
-        }
-
     def _folder_image_files(self, folder_path: str) -> List[Path]:
         path = Path(folder_path).expanduser()
         if not path.exists() or not path.is_dir():
@@ -193,62 +133,14 @@ class APRPage:
         except Exception:
             return ""
 
-    def _get_crop_ratios(
-        self,
-        settings_df: pd.DataFrame,
-        project: str,
-        file_bytes: bytes,
-    ) -> Tuple[float, float, float, float]:
-        crop_left_ratio = AppConfig.OCR_DEFAULTS_PC["Crop_Left_Ratio_PC"]
-        crop_top_ratio = AppConfig.OCR_DEFAULTS_PC["Crop_Top_Ratio_PC"]
-        crop_right_ratio = AppConfig.OCR_DEFAULTS_PC["Crop_Right_Ratio_PC"]
-        crop_bottom_ratio = AppConfig.OCR_DEFAULTS_PC["Crop_Bottom_Ratio_PC"]
-
-        try:
-            srow = settings_df[settings_df["Project_Name"] == str(project)].iloc[0]
-
-            if U.is_mobile_tall_image(file_bytes):
-                crop_left_ratio = U.to_ratio(
-                    srow.get("Crop_Left_Ratio_Mobile", AppConfig.OCR_DEFAULTS_MOBILE["Crop_Left_Ratio_Mobile"]),
-                    AppConfig.OCR_DEFAULTS_MOBILE["Crop_Left_Ratio_Mobile"],
-                )
-                crop_top_ratio = U.to_ratio(
-                    srow.get("Crop_Top_Ratio_Mobile", AppConfig.OCR_DEFAULTS_MOBILE["Crop_Top_Ratio_Mobile"]),
-                    AppConfig.OCR_DEFAULTS_MOBILE["Crop_Top_Ratio_Mobile"],
-                )
-                crop_right_ratio = U.to_ratio(
-                    srow.get("Crop_Right_Ratio_Mobile", AppConfig.OCR_DEFAULTS_MOBILE["Crop_Right_Ratio_Mobile"]),
-                    AppConfig.OCR_DEFAULTS_MOBILE["Crop_Right_Ratio_Mobile"],
-                )
-                crop_bottom_ratio = U.to_ratio(
-                    srow.get("Crop_Bottom_Ratio_Mobile", AppConfig.OCR_DEFAULTS_MOBILE["Crop_Bottom_Ratio_Mobile"]),
-                    AppConfig.OCR_DEFAULTS_MOBILE["Crop_Bottom_Ratio_Mobile"],
-                )
-            else:
-                crop_left_ratio = U.to_ratio(
-                    srow.get("Crop_Left_Ratio_PC", AppConfig.OCR_DEFAULTS_PC["Crop_Left_Ratio_PC"]),
-                    AppConfig.OCR_DEFAULTS_PC["Crop_Left_Ratio_PC"],
-                )
-                crop_top_ratio = U.to_ratio(
-                    srow.get("Crop_Top_Ratio_PC", AppConfig.OCR_DEFAULTS_PC["Crop_Top_Ratio_PC"]),
-                    AppConfig.OCR_DEFAULTS_PC["Crop_Top_Ratio_PC"],
-                )
-                crop_right_ratio = U.to_ratio(
-                    srow.get("Crop_Right_Ratio_PC", AppConfig.OCR_DEFAULTS_PC["Crop_Right_Ratio_PC"]),
-                    AppConfig.OCR_DEFAULTS_PC["Crop_Right_Ratio_PC"],
-                )
-                crop_bottom_ratio = U.to_ratio(
-                    srow.get("Crop_Bottom_Ratio_PC", AppConfig.OCR_DEFAULTS_PC["Crop_Bottom_Ratio_PC"]),
-                    AppConfig.OCR_DEFAULTS_PC["Crop_Bottom_Ratio_PC"],
-                )
-        except Exception:
-            pass
-
-        return crop_left_ratio, crop_top_ratio, crop_right_ratio, crop_bottom_ratio
-
+    # =========================================================
+    # OCR: SmartVault main metrics
+    # =========================================================
     def _apply_ocr_result(self, file_bytes: bytes, settings_df: pd.DataFrame, project: str) -> None:
-        crop_left_ratio, crop_top_ratio, crop_right_ratio, crop_bottom_ratio = self._get_crop_ratios(
-            settings_df, project, file_bytes
+        platform = OCRProcessor.detect_platform(file_bytes)
+
+        crop_left_ratio, crop_top_ratio, crop_right_ratio, crop_bottom_ratio = (
+            OCRProcessor.get_general_crop_ratios(settings_df, project, platform)
         )
 
         raw_text = ExternalService.ocr_space_extract_text_with_crop(
@@ -268,47 +160,45 @@ class APRPage:
             f"right={crop_right_ratio:.3f}, bottom={crop_bottom_ratio:.3f}"
         )
 
-        if U.is_mobile_tall_image(file_bytes):
-            smart = self._ocr_smartvault_mobile_metrics(file_bytes)
+        boxes = OCRProcessor.get_smartvault_boxes(settings_df, project, platform)
+        smart = OCRProcessor.extract_metrics(file_bytes, boxes)
 
-            st.markdown("#### SmartVaultモバイル専用OCR結果")
-            st.image(smart["boxed_preview"], caption="赤枠 = OCR対象範囲", width=500)
+        st.markdown(f"#### SmartVault OCR結果 ({platform})")
+        st.image(smart["preview"], caption="赤枠 = OCR対象範囲", width=500)
 
-            c_a, c_b, c_c = st.columns(3)
-            with c_a:
-                if smart["total_liquidity"] is not None:
-                    st.success(f"流動性: {U.fmt_usd(float(smart['total_liquidity']))}")
-                else:
-                    st.warning("流動性: 未検出")
-            with c_b:
-                if smart["yesterday_profit"] is not None:
-                    st.success(f"昨日の収益: {U.fmt_usd(float(smart['yesterday_profit']))}")
-                else:
-                    st.warning("昨日の収益: 未検出")
-            with c_c:
-                if smart["apr_value"] is not None:
-                    st.success(f"APR: {float(smart['apr_value']):.2f}%")
-                else:
-                    st.warning("APR: 未検出")
-
+        c_a, c_b, c_c = st.columns(3)
+        with c_a:
             if smart["total_liquidity"] is not None:
-                st.session_state["sv_total_liquidity"] = f"{float(smart['total_liquidity']):,.2f}"
-                st.session_state["ocr_total_liquidity"] = float(smart["total_liquidity"])
-            if smart["yesterday_profit"] is not None:
-                st.session_state["sv_yesterday_profit"] = f"{float(smart['yesterday_profit']):,.2f}"
-                st.session_state["ocr_yesterday_profit"] = float(smart["yesterday_profit"])
-            if smart["apr_value"] is not None:
-                st.session_state["sv_apr"] = f"{float(smart['apr_value']):.4f}"
-                st.session_state["ocr_apr"] = float(smart["apr_value"])
-        else:
-            apr_candidates = U.extract_percent_candidates(raw_text)
-            if apr_candidates:
-                best = apr_candidates[0]
-                st.success(f"通常OCRからAPR候補を検出: {best}%")
-                st.session_state["sv_apr"] = f"{float(best):.4f}"
-                st.session_state["ocr_apr"] = float(best)
+                st.success(f"流動性: {U.fmt_usd(float(smart['total_liquidity']))}")
             else:
-                st.warning("APR候補は見つかりませんでした。")
+                st.warning("流動性: 未検出")
+        with c_b:
+            if smart["yesterday_profit"] is not None:
+                st.success(f"昨日の収益: {U.fmt_usd(float(smart['yesterday_profit']))}")
+            else:
+                st.warning("昨日の収益: 未検出")
+        with c_c:
+            if smart["apr_value"] is not None:
+                st.success(f"APR: {float(smart['apr_value']):.2f}%")
+            else:
+                st.warning("APR: 未検出")
+
+        with st.expander("OCR生テキスト（流動性）", expanded=False):
+            st.text(smart["total_text"] or "")
+        with st.expander("OCR生テキスト（昨日の収益）", expanded=False):
+            st.text(smart["profit_text"] or "")
+        with st.expander("OCR生テキスト（APR）", expanded=False):
+            st.text(smart["apr_text"] or "")
+
+        if smart["total_liquidity"] is not None:
+            st.session_state["sv_total_liquidity"] = f"{float(smart['total_liquidity']):,.2f}"
+            st.session_state["ocr_total_liquidity"] = float(smart["total_liquidity"])
+        if smart["yesterday_profit"] is not None:
+            st.session_state["sv_yesterday_profit"] = f"{float(smart['yesterday_profit']):,.2f}"
+            st.session_state["ocr_yesterday_profit"] = float(smart["yesterday_profit"])
+        if smart["apr_value"] is not None:
+            st.session_state["sv_apr"] = f"{float(smart['apr_value']):.4f}"
+            st.session_state["ocr_apr"] = float(smart["apr_value"])
 
     # =========================================================
     # OCR history sheet
@@ -372,167 +262,24 @@ class APRPage:
             ws.append_row(row, value_input_option="USER_ENTERED")
 
     # =========================================================
-    # 3領域OCR
+    # OCR: Transaction rows
     # =========================================================
-    def _normalize_ocr_text(self, text: str) -> str:
-        t = str(text or "")
-        t = t.replace("月 ", "月").replace(" 日", "日").replace(" at ", " ").replace("午前", "am").replace("午後", "pm")
-        t = re.sub(r"[ \t\u3000]+", " ", t)
-        return t.strip()
-
-    def _row_top_ratio(self, row_index: int) -> float:
-        return self.TX_SCAN_BASE_TOP_RATIO_MOBILE + (self.TX_SCAN_STEP_RATIO_MOBILE * row_index)
-
-    def _build_region_box(
-        self,
-        row_top: float,
-        left_ratio: float,
-        right_ratio: float,
-        top_offset_ratio: float,
-        bottom_offset_ratio: float,
-    ) -> Dict[str, float]:
-        return {
-            "left": left_ratio,
-            "top": row_top + top_offset_ratio,
-            "right": right_ratio,
-            "bottom": row_top + bottom_offset_ratio,
-        }
-
-    def _extract_date_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        for pat in [
-            r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
-            r"(\d{1,2}\s*月\s*\d{1,2})",
-            r"(\d{1,2}/\d{1,2})",
-            r"(\d{1,2}-\d{1,2})",
-        ]:
-            m = re.search(pat, t)
-            if m:
-                return self._normalize_ocr_text(m.group(1)).replace(" ", "")
-        return ""
-
-    def _extract_time_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        for pat in [r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))", r"(\d{1,2}:\d{2})"]:
-            m = re.search(pat, t)
-            if m:
-                return self._normalize_ocr_text(m.group(1)).lower()
-        return ""
-
-    def _extract_type_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        if "受け取ったUSDC" in t or "受け取った USDC" in t:
-            return "受け取ったUSDC"
-        if "トークンを受け取りました" in t:
-            return "トークンを受け取りました"
-        if "承認" in t:
-            return "承認"
-        if "USDC" in t:
-            return "USDC"
-        return ""
-
-    def _extract_amount_usd(self, text: str) -> Optional[float]:
-        t = self._normalize_ocr_text(text)
-        m = re.search(r"\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)", t)
-        if m:
-            try:
-                return float(m.group(1).replace(",", ""))
-            except Exception:
-                return None
-
-        vals = U.extract_usd_candidates(t)
-        if vals:
-            positives = [float(v) for v in vals if float(v) >= 0]
-            if positives:
-                return max(positives)
-        return None
-
-    def _make_tx_block_key(self, date_label: str, time_label: str, type_label: str, amount_usd: float) -> str:
-        return f"{date_label}|{time_label}|{type_label}|{float(amount_usd):.2f}"
-
-    def _ocr_transaction_rows_three_regions(self, file_bytes: bytes) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
-
-        for i in range(self.TX_SCAN_MAX_ROWS_MOBILE):
-            row_top = self._row_top_ratio(i)
-
-            date_box = self._build_region_box(
-                row_top,
-                self.TX_DATE_LEFT_RATIO_MOBILE,
-                self.TX_DATE_RIGHT_RATIO_MOBILE,
-                self.TX_DATE_TOP_OFFSET_RATIO_MOBILE,
-                self.TX_DATE_BOTTOM_OFFSET_RATIO_MOBILE,
-            )
-            type_box = self._build_region_box(
-                row_top,
-                self.TX_TYPE_LEFT_RATIO_MOBILE,
-                self.TX_TYPE_RIGHT_RATIO_MOBILE,
-                self.TX_TYPE_TOP_OFFSET_RATIO_MOBILE,
-                self.TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE,
-            )
-            usd_box = self._build_region_box(
-                row_top,
-                self.TX_USD_LEFT_RATIO_MOBILE,
-                self.TX_USD_RIGHT_RATIO_MOBILE,
-                self.TX_USD_TOP_OFFSET_RATIO_MOBILE,
-                self.TX_USD_BOTTOM_OFFSET_RATIO_MOBILE,
-            )
-
-            date_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, date_box))
-            type_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, type_box))
-            usd_text = self._normalize_ocr_text(self._ocr_crop_text(file_bytes, usd_box))
-
-            with st.expander(f"行{i + 1} OCR結果", expanded=False):
-                st.write(
-                    {
-                        "row_top": round(row_top, 4),
-                        "date_box": date_box,
-                        "type_box": type_box,
-                        "usd_box": usd_box,
-                    }
-                )
-                st.write({"date_text": date_text or "(empty)"})
-                st.write({"type_text": type_text or "(empty)"})
-                st.write({"usd_text": usd_text or "(empty)"})
-
-            joined_raw = "\n".join([date_text, type_text, usd_text]).strip()
-            if not joined_raw:
-                continue
-
-            date_label = self._extract_date_label(date_text or joined_raw)
-            time_label = self._extract_time_label(date_text or joined_raw)
-            type_label = self._extract_type_label(type_text or joined_raw)
-            amount_usd = self._extract_amount_usd(usd_text or joined_raw)
-
-            if amount_usd is None or amount_usd <= 0 or not date_label or not time_label or not type_label:
-                continue
-            if type_label != "受け取ったUSDC":
-                continue
-
-            unique_key = self._make_tx_block_key(date_label, time_label, type_label, amount_usd)
-            rows.append(
-                {
-                    "row_index": i + 1,
-                    "date_label": date_label,
-                    "time_label": time_label,
-                    "type_label": type_label,
-                    "amount_usd": float(amount_usd),
-                    "token_amount": None,
-                    "token_symbol": "",
-                    "unique_key": unique_key,
-                    "raw_text": joined_raw,
-                }
-            )
-
-        return rows
-
-    def _process_transaction_ocr_three_regions(
+    def _process_transaction_ocr(
         self,
         file_bytes: bytes,
         source_image: str,
         source_project: str,
+        settings_df: pd.DataFrame,
     ) -> None:
-        tx_rows = self._ocr_transaction_rows_three_regions(file_bytes)
+        platform = OCRProcessor.detect_platform(file_bytes)
+
+        tx_rows = OCRProcessor.extract_transaction_rows(
+            file_bytes=file_bytes,
+            settings_df=settings_df,
+            project=source_project,
+            platform=platform,
+        )
+
         if not tx_rows:
             st.warning("日付・時間・種別・金額を含む取引明細を抽出できませんでした。")
             return
@@ -588,7 +335,7 @@ class APRPage:
         if new_sheet_rows:
             self._append_ocr_tx_rows(new_sheet_rows)
 
-        st.markdown("#### 3領域OCR結果")
+        st.markdown(f"#### 3領域OCR結果 ({platform})")
         self._render_html_table(pd.DataFrame(view_rows))
 
         c1, c2, c3 = st.columns(3)
@@ -601,12 +348,54 @@ class APRPage:
         else:
             st.info("新規追加はありません。すべて重複として除外しました。")
 
+    def _render_transaction_preview_boxes(
+        self,
+        settings_df: pd.DataFrame,
+        project: str,
+        file_bytes: bytes,
+    ) -> None:
+        platform = OCRProcessor.detect_platform(file_bytes)
+        preview_boxes = OCRProcessor.build_preview_boxes(
+            settings_df=settings_df,
+            project=project,
+            platform=platform,
+            rows_to_show=3,
+        )
+
+        st.markdown(f"#### 3領域OCR赤枠プレビュー ({platform})")
+        st.image(U.draw_ocr_boxes(file_bytes, preview_boxes), caption="3領域OCR赤枠", width=500)
+
+        layout = OCRProcessor.get_tx_layout(settings_df, project, platform)
+
+        st.markdown(
+            f"""
+現在の3領域OCR座標（{platform}）
+- BaseTop : {layout["base_top"]:.3f}
+- Step    : {layout["step"]:.3f}
+- MaxRows : {int(layout["max_rows"])}
+
+日付+時間領域
+- Left  : {layout["date_left"]:.3f}
+- Right : {layout["date_right"]:.3f}
+
+種別領域
+- Left  : {layout["type_left"]:.3f}
+- Right : {layout["type_right"]:.3f}
+
+USD領域
+- Left  : {layout["usd_left"]:.3f}
+- Right : {layout["usd_right"]:.3f}
+"""
+        )
+
     # =========================================================
     # Main render
     # =========================================================
     def render(self, settings_df: pd.DataFrame, members_df: pd.DataFrame) -> None:
         st.subheader("📈 APR 確定")
-        st.caption(f"{AppConfig.RANK_LABEL} / PERSONAL=個別計算 / GROUP=総額均等割 / 管理者: {AdminAuth.current_label()}")
+        st.caption(
+            f"{AppConfig.RANK_LABEL} / PERSONAL=個別計算 / GROUP=総額均等割 / 管理者: {AdminAuth.current_label()}"
+        )
 
         projects = self.repo.active_projects(settings_df)
         if not projects:
@@ -658,6 +447,7 @@ class APRPage:
             key="apr_watch_folder",
             placeholder="/Users/yourname/Desktop/smartvault_images",
         )
+
         if default_watch_folder:
             st.caption(f"Secrets既定パス: {default_watch_folder}")
 
@@ -674,6 +464,7 @@ class APRPage:
             selected_label = st.selectbox("フォルダ内画像", labels, index=0, key="apr_folder_file_select")
             selected_index = labels.index(selected_label)
             selected_folder_file = image_files[selected_index]
+
             st.caption(f"最新画像: {image_files[0].name}")
 
             c_folder1, c_folder2 = st.columns(2)
@@ -717,38 +508,22 @@ class APRPage:
         if selected_evidence_name:
             st.caption(f"現在のエビデンス画像: {selected_evidence_name}")
 
+        if selected_evidence_bytes:
+            self._render_transaction_preview_boxes(settings_df, project, selected_evidence_bytes)
+
         st.divider()
         st.markdown("#### 受け取ったUSDC OCR集計（重複防止）")
         st.caption(f"保存先シート: {self.OCR_TX_HISTORY_SHEET}")
-        st.markdown(
-            f"""
-現在の3領域OCR座標（モバイル）
-- BaseTop : {self.TX_SCAN_BASE_TOP_RATIO_MOBILE:.3f}
-- Step    : {self.TX_SCAN_STEP_RATIO_MOBILE:.3f}
-- MaxRows : {self.TX_SCAN_MAX_ROWS_MOBILE}
-
-日付+時間領域
-- Left  : {self.TX_DATE_LEFT_RATIO_MOBILE:.3f}
-- Right : {self.TX_DATE_RIGHT_RATIO_MOBILE:.3f}
-
-種別領域
-- Left  : {self.TX_TYPE_LEFT_RATIO_MOBILE:.3f}
-- Right : {self.TX_TYPE_RIGHT_RATIO_MOBILE:.3f}
-
-USD領域
-- Left  : {self.TX_USD_LEFT_RATIO_MOBILE:.3f}
-- Right : {self.TX_USD_RIGHT_RATIO_MOBILE:.3f}
-"""
-        )
 
         c_tx1, c_tx2 = st.columns(2)
         with c_tx1:
             if st.button("現在の画像から3領域OCR集計", use_container_width=True, key="ocr_tx_current_three"):
                 if selected_evidence_bytes:
-                    self._process_transaction_ocr_three_regions(
-                        selected_evidence_bytes,
-                        selected_evidence_name or "selected_image",
-                        project,
+                    self._process_transaction_ocr(
+                        file_bytes=selected_evidence_bytes,
+                        source_image=selected_evidence_name or "selected_image",
+                        source_project=project,
+                        settings_df=settings_df,
                     )
                 else:
                     st.warning("先にフォルダ画像を選ぶか、画像をアップロードしてください。")
@@ -761,7 +536,12 @@ USD領域
                         file_bytes = latest_file.read_bytes()
                         st.session_state["apr_folder_selected_name"] = latest_file.name
                         st.session_state["apr_folder_selected_bytes"] = file_bytes
-                        self._process_transaction_ocr_three_regions(file_bytes, latest_file.name, project)
+                        self._process_transaction_ocr(
+                            file_bytes=file_bytes,
+                            source_image=latest_file.name,
+                            source_project=project,
+                            settings_df=settings_df,
+                        )
                     except Exception as e:
                         st.error(f"最新画像の3領域OCRでエラー: {e}")
                 else:
