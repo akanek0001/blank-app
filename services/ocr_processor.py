@@ -28,25 +28,31 @@ class OCRBox:
 
 
 class OCRProcessor:
+    # =========================================================
+    # Mobile transaction OCR layout
+    # =========================================================
     MOBILE_TX_SCAN_BASE_TOP_RATIO = 430 / 2532
     MOBILE_TX_SCAN_STEP_RATIO = 123 / 2532
     MOBILE_TX_SCAN_MAX_ROWS = 10
 
-    MOBILE_TX_DATE_LEFT = 25 / 1170
-    MOBILE_TX_DATE_RIGHT = 470 / 1170
-    MOBILE_TX_DATE_TOP_OFFSET = 0 / 2532
-    MOBILE_TX_DATE_BOTTOM_OFFSET = 70 / 2532
+    MOBILE_TX_DATE_LEFT = 0.02
+    MOBILE_TX_DATE_RIGHT = 0.40
+    MOBILE_TX_DATE_TOP_OFFSET = 0.00
+    MOBILE_TX_DATE_BOTTOM_OFFSET = 0.03
 
-    MOBILE_TX_TYPE_LEFT = 100 / 1170
-    MOBILE_TX_TYPE_RIGHT = 760 / 1170
-    MOBILE_TX_TYPE_TOP_OFFSET = 38 / 2532
-    MOBILE_TX_TYPE_BOTTOM_OFFSET = 125 / 2532
+    MOBILE_TX_TYPE_LEFT = 0.08
+    MOBILE_TX_TYPE_RIGHT = 0.65
+    MOBILE_TX_TYPE_TOP_OFFSET = 0.015
+    MOBILE_TX_TYPE_BOTTOM_OFFSET = 0.05
 
-    MOBILE_TX_USD_LEFT = 760 / 1170
-    MOBILE_TX_USD_RIGHT = 1090 / 1170
-    MOBILE_TX_USD_TOP_OFFSET = 28 / 2532
-    MOBILE_TX_USD_BOTTOM_OFFSET = 92 / 2532
+    MOBILE_TX_USD_LEFT = 0.65
+    MOBILE_TX_USD_RIGHT = 0.93
+    MOBILE_TX_USD_TOP_OFFSET = 0.01
+    MOBILE_TX_USD_BOTTOM_OFFSET = 0.04
 
+    # =========================================================
+    # PC transaction OCR layout
+    # =========================================================
     PC_TX_SCAN_BASE_TOP_RATIO = 0.18
     PC_TX_SCAN_STEP_RATIO = 0.08
     PC_TX_SCAN_MAX_ROWS = 12
