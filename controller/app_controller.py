@@ -10,6 +10,11 @@ from store.datastore import DataStore
 from ui.admin import AdminPage
 from ui.help import HelpPage
 
+try:
+    from core.auth import AdminAuth
+except Exception:
+    AdminAuth = None
+
 
 class AppController:
     """
@@ -26,8 +31,41 @@ class AppController:
         self.admin_page: AdminPage | None = None
         self.help_page: HelpPage | None = None
 
+    def _get_namespace(self) -> str:
+        try:
+            if AdminAuth is not None and hasattr(AdminAuth, "current_namespace"):
+                ns = AdminAuth.current_namespace()
+                if str(ns).strip():
+                    return str(ns).strip()
+        except Exception:
+            pass
+        return "A"
+
+    def _get_spreadsheet_id(self) -> str:
+        candidates = [
+            st.secrets.get("spreadsheet_id"),
+            st.secrets.get("gsheet", {}).get("spreadsheet_id"),
+            st.secrets.get("google_sheets", {}).get("spreadsheet_id"),
+            st.secrets.get("connections", {}).get("gsheets", {}).get("spreadsheet_id"),
+        ]
+
+        for value in candidates:
+            if str(value or "").strip():
+                return str(value).strip()
+
+        st.error(
+            "Secrets に spreadsheet_id がありません。"
+            " 次のいずれかに設定してください: "
+            "[spreadsheet_id] / [gsheet.spreadsheet_id] / "
+            "[google_sheets.spreadsheet_id] / [connections.gsheets.spreadsheet_id]"
+        )
+        st.stop()
+
     def setup_services(self) -> None:
-        self.gs = GSheetService()
+        spreadsheet_id = self._get_spreadsheet_id()
+        namespace = self._get_namespace()
+
+        self.gs = GSheetService(spreadsheet_id=spreadsheet_id, namespace=namespace)
         self.repo = Repository(self.gs)
         self.engine = FinanceEngine()
         self.store = DataStore(self.repo)
