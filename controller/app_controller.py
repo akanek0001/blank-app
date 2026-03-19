@@ -32,7 +32,7 @@ class AppController:
         )
         self.repo = Repository(self.gs)
         self.engine = FinanceEngine()
-        self.store = DataStore(self.repo)
+        self.store = DataStore(self.repo, self.engine)
 
         self.apr_page = APRPage(self.repo, self.engine, self.store)
         self.admin_page = AdminPage(self.repo, self.store)
@@ -40,7 +40,7 @@ class AppController:
 
     def run(self) -> None:
         self.setup_services()
-        data = self.store.load_all()
+        data = self.store.load()
 
         page = st.sidebar.radio(
             "メニュー",
