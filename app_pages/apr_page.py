@@ -134,7 +134,7 @@ class APRPage:
             return ""
 
     # =========================================================
-    # OCR: SmartVault main metrics
+    # OCR: SmartVault metrics
     # =========================================================
     def _apply_ocr_result(self, file_bytes: bytes, settings_df: pd.DataFrame, project: str) -> None:
         platform = OCRProcessor.detect_platform(file_bytes)
