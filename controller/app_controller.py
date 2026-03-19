@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from engine.finance_engine import FinanceEngine
-from pages.apr_page import APRPage
+from app_pages.apr_page import APRPage
 from repository.repository import Repository
 from store.datastore import DataStore
 from ui.admin import AdminPage
