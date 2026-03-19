@@ -32,24 +32,24 @@ class APRPage:
         "CreatedAt_JST",
     ]
 
-    TX_SCAN_BASE_TOP_RATIO_MOBILE = 430 / 2532
-    TX_SCAN_STEP_RATIO_MOBILE = 123 / 2532
+    TX_SCAN_BASE_TOP_RATIO_MOBILE = 345 / 2532
+    TX_SCAN_STEP_RATIO_MOBILE = 122 / 2532
     TX_SCAN_MAX_ROWS_MOBILE = 10
 
-    TX_DATE_LEFT_RATIO_MOBILE = 25 / 1170
-    TX_DATE_RIGHT_RATIO_MOBILE = 470 / 1170
+    TX_DATE_LEFT_RATIO_MOBILE = 20 / 1170
+    TX_DATE_RIGHT_RATIO_MOBILE = 420 / 1170
     TX_DATE_TOP_OFFSET_RATIO_MOBILE = 0 / 2532
     TX_DATE_BOTTOM_OFFSET_RATIO_MOBILE = 58 / 2532
 
     TX_TYPE_LEFT_RATIO_MOBILE = 110 / 1170
-    TX_TYPE_RIGHT_RATIO_MOBILE = 760 / 1170
-    TX_TYPE_TOP_OFFSET_RATIO_MOBILE = 38 / 2532
-    TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE = 125 / 2532
+    TX_TYPE_RIGHT_RATIO_MOBILE = 690 / 1170
+    TX_TYPE_TOP_OFFSET_RATIO_MOBILE = 30 / 2532
+    TX_TYPE_BOTTOM_OFFSET_RATIO_MOBILE = 98 / 2532
 
-    TX_USD_LEFT_RATIO_MOBILE = 100 / 1170
-    TX_USD_RIGHT_RATIO_MOBILE = 760 / 1170
-    TX_USD_TOP_OFFSET_RATIO_MOBILE = 38 / 2532
-    TX_USD_BOTTOM_OFFSET_RATIO_MOBILE = 125 / 2532
+    TX_USD_LEFT_RATIO_MOBILE = 790 / 1170
+    TX_USD_RIGHT_RATIO_MOBILE = 1070 / 1170
+    TX_USD_TOP_OFFSET_RATIO_MOBILE = 18 / 2532
+    TX_USD_BOTTOM_OFFSET_RATIO_MOBILE = 74 / 2532
 
     def __init__(self, repo: Repository, engine: FinanceEngine, store: DataStore):
         self.repo = repo
@@ -143,7 +143,7 @@ class APRPage:
         if U.is_mobile_tall_image(file_bytes):
             smart = self._ocr_smartvault_mobile_metrics(file_bytes)
             st.markdown("#### SmartVaultモバイル専用OCR結果")
-            st.image(smart["boxed_preview"], caption="赤枠 = OCR対象範囲", use_container_width=True)
+            st.image(smart["boxed_preview"], caption="赤枠 = OCR対象範囲", width=500)
             c_a, c_b, c_c = st.columns(3)
             with c_a:
                 st.success(f"流動性: {U.fmt_usd(float(smart['total_liquidity']))}") if smart["total_liquidity"] is not None else st.warning("流動性: 未検出")
