@@ -976,3 +976,181 @@ USD領域
 
         with st.expander("個人別の本日配当（確認）", expanded=False):
             st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+
+
+        if st.button("APRを確定して対象全員にLINE送信"):
+            try:
+                if apr <= 0:
+                    st.warning("APRが0以下です。")
+                    return
+
+                evidence_url = None
+                evidence_file_bytes: Optional[bytes] = None
+
+                if uploaded is not None:
+                    evidence_file_bytes = uploaded.getvalue()
+                elif selected_evidence_bytes:
+                    evidence_file_bytes = selected_evidence_bytes
+
+                if evidence_file_bytes:
+                    evidence_url = ExternalService.upload_imgbb(evidence_file_bytes)
+                    if not evidence_url:
+                        st.error("画像アップロードに失敗しました。")
+                        return
+
+                source_mode = U.detect_source_mode(
+                    final_liquidity=float(total_liquidity),
+                    final_profit=float(yesterday_profit),
+                    final_apr=float(apr),
+                    ocr_liquidity=st.session_state.get("ocr_total_liquidity"),
+                    ocr_profit=st.session_state.get("ocr_yesterday_profit"),
+                    ocr_apr=st.session_state.get("ocr_apr"),
+                )
+
+                ts = U.fmt_dt(U.now_jst())
+                apr_ledger_count = 0
+                line_log_count = 0
+                success = 0
+                fail = 0
+                skip_count = 0
+                existing_apr_keys = self.repo.existing_apr_keys_for_date(today_key)
+                token = ExternalService.get_line_token(AdminAuth.current_namespace())
+                daily_add_map: Dict[Tuple[str, str], float] = {}
+
+                self.repo.append_smartvault_history(
+                    ts,
+                    project,
+                    float(total_liquidity),
+                    float(yesterday_profit),
+                    float(apr),
+                    source_mode,
+                    st.session_state.get("ocr_total_liquidity"),
+                    st.session_state.get("ocr_yesterday_profit"),
+                    st.session_state.get("ocr_apr"),
+                    evidence_url or "",
+                    AdminAuth.current_name(),
+                    AdminAuth.current_namespace(),
+                    f"APR確定時に保存 / Evidence:{selected_evidence_name}" if selected_evidence_name else "APR確定時に保存",
+                )
+
+                for p in target_projects:
+                    row = settings_df[settings_df["Project_Name"] == str(p)].iloc[0]
+                    project_net_factor = float(row.get("Net_Factor", AppConfig.FACTOR["MASTER"]))
+                    compound_timing = U.normalize_compound(row.get("Compound_Timing", AppConfig.COMPOUND["NONE"]))
+                    mem = self.repo.project_members_active(members_df, p)
+
+                    if mem.empty:
+                        continue
+
+                    mem_calc = self.engine.calc_project_apr(mem, float(apr), project_net_factor, p)
+
+                    for _, r in mem_calc.iterrows():
+                        person = str(r["PersonName"]).strip()
+                        uid = str(r["Line_User_ID"]).strip()
+                        disp = str(r["LINE_DisplayName"]).strip()
+                        daily_apr = float(r["DailyAPR"])
+                        current_principal = float(r["Principal"])
+                        apr_key = (str(p).strip(), person)
+
+                        if apr_key in existing_apr_keys:
+                            skip_count += 1
+                            continue
+
+                        note = (
+                            f"APR:{apr}%, "
+                            f"Liquidity:{total_liquidity}, "
+                            f"YesterdayProfit:{yesterday_profit}, "
+                            f"SourceMode:{source_mode}, "
+                            f"Mode:{r['CalcMode']}, Rank:{r['Rank']}, Factor:{r['Factor']}, CompoundTiming:{compound_timing}"
+                        )
+
+                        self.repo.append_ledger(
+                            ts, p, person, AppConfig.TYPE["APR"], daily_apr, note, evidence_url or "", uid, disp
+                        )
+                        existing_apr_keys.add(apr_key)
+                        apr_ledger_count += 1
+
+                        if compound_timing == AppConfig.COMPOUND["DAILY"]:
+                            daily_add_map[(str(p).strip(), person)] = daily_add_map.get((str(p).strip(), person), 0.0) + daily_apr
+                            person_after_amount = current_principal + daily_apr
+                        else:
+                            person_after_amount = current_principal
+
+                        personalized_msg = (
+                            "🏦【APR収益報告】\n"
+                            f"{person} 様\n"
+                            f"報告日時: {U.now_jst().strftime('%Y/%m/%d %H:%M')}\n"
+                            f"流動性: {U.fmt_usd(total_liquidity)}\n"
+                            f"昨日の収益: {U.fmt_usd(yesterday_profit)}\n"
+                            f"APR: {apr:.4f}%\n"
+                            f"本日配当: {U.fmt_usd(daily_apr)}\n"
+                            f"現在運用額: {U.fmt_usd(current_principal)}\n"
+                            f"複利タイプ: {U.compound_label(compound_timing)}\n"
+                        )
+
+                        if compound_timing == AppConfig.COMPOUND["DAILY"]:
+                            personalized_msg += f"複利反映後運用額: {U.fmt_usd(person_after_amount)}\n"
+
+                        if not uid:
+                            code = 0
+                            line_note = "LINE未送信: Line_User_IDなし"
+                        else:
+                            code = ExternalService.send_line_push(token, uid, personalized_msg, evidence_url)
+                            line_note = (
+                                f"HTTP:{code}, "
+                                f"Liquidity:{total_liquidity}, "
+                                f"YesterdayProfit:{yesterday_profit}, "
+                                f"APR:{apr}%, SourceMode:{source_mode}, CompoundTiming:{compound_timing}"
+                            )
+
+                        self.repo.append_ledger(
+                            ts, p, person, AppConfig.TYPE["LINE"], 0, line_note, evidence_url or "", uid, disp
+                        )
+                        line_log_count += 1
+
+                        if code == 200:
+                            success += 1
+                        else:
+                            fail += 1
+
+                if daily_add_map:
+                    for i in range(len(members_df)):
+                        p = str(members_df.loc[i, "Project_Name"]).strip()
+                        pn = str(members_df.loc[i, "PersonName"]).strip()
+                        addv = float(daily_add_map.get((p, pn), 0.0))
+                        if addv != 0.0 and U.truthy(members_df.loc[i, "IsActive"]):
+                            members_df.loc[i, "Principal"] = float(members_df.loc[i, "Principal"]) + addv
+                            members_df.loc[i, "UpdatedAt_JST"] = ts
+                    self.repo.write_members(members_df)
+
+                self.store.persist_and_refresh()
+                st.success(
+                    f"APR記録:{apr_ledger_count}件 / LINE履歴記録:{line_log_count}件 / "
+                    f"送信成功:{success} / 送信失敗:{fail} / 重複スキップ:{skip_count}件"
+                )
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"APR確定処理でエラー: {e}")
+                st.stop()
+
+        if send_scope == "選択中プロジェクトのみ":
+            row = settings_df[settings_df["Project_Name"] == str(project)].iloc[0]
+            compound_timing = U.normalize_compound(row.get("Compound_Timing", AppConfig.COMPOUND["NONE"]))
+
+            if compound_timing == AppConfig.COMPOUND["MONTHLY"]:
+                st.divider()
+                st.markdown("#### 月次複利反映")
+
+                if st.button("未反映APRを元本へ反映"):
+                    try:
+                        count, total_added = self.engine.apply_monthly_compound(self.repo, members_df, project)
+                        self.store.persist_and_refresh()
+                        if count == 0:
+                            st.info("未反映のAPRはありません。")
+                        else:
+                            st.success(f"{count}名に反映しました。合計反映額: {U.fmt_usd(total_added)}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"月次複利反映でエラー: {e}")
+                        st.stop()
