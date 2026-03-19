@@ -95,6 +95,33 @@ class APRPage:
         t = re.sub(r"[ \t\u3000]+", " ", t)
         return t.strip()
 
+    def _ocr_crop_text(self, file_bytes: bytes, box: Dict[str, float]) -> str:
+        return ExternalService.ocr_space_extract_text_with_crop(
+            file_bytes=file_bytes,
+            crop_left_ratio=float(box["left"]),
+            crop_top_ratio=float(box["top"]),
+            crop_right_ratio=float(box["right"]),
+            crop_bottom_ratio=float(box["bottom"]),
+        )
+
+    def _row_top_ratio(self, base_top: float, step: float, row_index: int) -> float:
+        return base_top + (step * row_index)
+
+    def _build_region_box(
+        self,
+        row_top: float,
+        left_ratio: float,
+        right_ratio: float,
+        top_offset_ratio: float,
+        bottom_offset_ratio: float,
+    ) -> Dict[str, float]:
+        return {
+            "left": float(left_ratio),
+            "top": float(row_top + top_offset_ratio),
+            "right": float(right_ratio),
+            "bottom": float(row_top + bottom_offset_ratio),
+        }
+
     def _detect_platform(self, file_bytes: Optional[bytes]) -> str:
         if not file_bytes:
             return "mobile"
