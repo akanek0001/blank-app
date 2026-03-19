@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any
 
 import pandas as pd
 import streamlit as st
@@ -8,34 +8,64 @@ import streamlit as st
 
 class AdminPage:
     # =========================================================
-    # Utils
+    # Safe convert
     # =========================================================
     @staticmethod
-    def _safe_df_for_streamlit(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    def _to_safe_cell(value: Any) -> str:
+        if value is None:
+            return ""
+
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+
+        if isinstance(value, bytes):
+            try:
+                return value.decode("utf-8", errors="ignore")
+            except Exception:
+                return str(value)
+
+        if isinstance(value, (list, tuple, set, dict)):
+            return str(value)
+
+        try:
+            return str(value)
+        except Exception:
+            return ""
+
+    @classmethod
+    def _safe_df_for_streamlit(cls, df: Optional[pd.DataFrame]) -> pd.DataFrame:
         if df is None:
             return pd.DataFrame()
 
-        out = df.copy()
+        try:
+            out = df.copy()
+        except Exception:
+            return pd.DataFrame()
 
-        # Streamlit / pyarrow で落ちやすい列を除外
+        # 落ちやすい内部列を除外
         out = out.drop(columns=["_row_id"], errors="ignore")
 
-        # None / NaN を空文字へ
-        out = out.fillna("")
+        # index も安全化
+        out = out.reset_index(drop=True)
 
-        # Arrow変換エラー回避のため全列文字列化
+        # 列名を文字列化
+        out.columns = [cls._to_safe_cell(c) for c in out.columns]
+
+        # 各セルを完全に文字列化
         for col in out.columns:
-            try:
-                out[col] = out[col].astype(str)
-            except Exception:
-                out[col] = out[col].map(lambda x: "" if x is None else str(x))
+            out[col] = out[col].map(cls._to_safe_cell)
+
+        # 念のため object に固定
+        out = out.astype("object")
 
         return out
 
     @staticmethod
     def _download_csv_button(label: str, df: pd.DataFrame, file_name: str) -> None:
-        safe_df = df.copy()
-        csv_data = safe_df.to_csv(index=False).encode("utf-8-sig")
+        csv_data = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
             label=label,
             data=csv_data,
@@ -47,11 +77,11 @@ class AdminPage:
     def _render_table_block(self, title: str, df: Optional[pd.DataFrame], file_name: str) -> None:
         st.markdown(f"#### {title}")
 
-        if df is None or df.empty:
+        safe_df = self._safe_df_for_streamlit(df)
+
+        if safe_df.empty:
             st.info(f"{title} は空です。")
             return
-
-        safe_df = self._safe_df_for_streamlit(df)
 
         c1, c2 = st.columns([3, 1])
         with c1:
@@ -84,13 +114,7 @@ class AdminPage:
         with c3:
             st.metric("LineUsers 件数", len(safe_line_users))
 
-        tab1, tab2, tab3 = st.tabs(
-            [
-                "Settings",
-                "Members",
-                "LineUsers",
-            ]
-        )
+        tab1, tab2, tab3 = st.tabs(["Settings", "Members", "LineUsers"])
 
         with tab1:
             self._render_table_block("Settings 一覧", safe_settings, "settings_export.csv")
