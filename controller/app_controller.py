@@ -36,7 +36,7 @@ class AppController:
 
         self.apr_page = APRPage(self.repo, self.engine, self.store)
         self.admin_page = AdminPage(self.repo, self.store)
-        self.help_page = HelpPage()
+        self.help_page = HelpPage(self.repo, self.store)
 
     def run(self) -> None:
         self.setup_services()
@@ -60,4 +60,7 @@ class AppController:
                 data["line_users_df"],
             )
         else:
-            self.help_page.render()
+            self.help_page.render(
+                self.gs,
+                data["settings_df"],
+            )
