@@ -7,7 +7,7 @@ class AppConfig:
     PAGE_LAYOUT = "wide"
     JST = timezone(timedelta(hours=9), "JST")
 
-    SPREADSHEET_ID = "ここにあなたのSpreadsheet ID"
+    SPREADSHEET_ID = "1z6XuFavFlUMYcsXmASlTgqvDcvNKuhCoSZePb-PHyn0"
 
     STATUS = {"ON": "🟢運用中", "OFF": "🔴停止"}
     RANK = {"MASTER": "Master", "ELITE": "Elite"}
