@@ -5,6 +5,7 @@ import streamlit as st
 from engine.finance_engine import FinanceEngine
 from app_pages.apr_page import APRPage
 from repository.repository import Repository
+from services.gsheet_service import GSheetService
 from store.datastore import DataStore
 from ui.admin import AdminPage
 from ui.help import HelpPage
@@ -13,10 +14,11 @@ from ui.help import HelpPage
 class AppController:
     """
     services / pages 分離後の接続用コントローラ。
-    この版では APR を pages.apr_page.APRPage へ接続する。
+    APR は app_pages.apr_page.APRPage を使用する。
     """
 
     def __init__(self):
+        self.gs: GSheetService | None = None
         self.repo: Repository | None = None
         self.engine: FinanceEngine | None = None
         self.store: DataStore | None = None
@@ -25,7 +27,8 @@ class AppController:
         self.help_page: HelpPage | None = None
 
     def setup_services(self) -> None:
-        self.repo = Repository()
+        self.gs = GSheetService()
+        self.repo = Repository(self.gs)
         self.engine = FinanceEngine()
         self.store = DataStore(self.repo)
 
