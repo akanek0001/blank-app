@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from config import AppConfig
 from engine.finance_engine import FinanceEngine
 from app_pages.apr_page import APRPage
 from repository.repository import Repository
@@ -41,28 +42,12 @@ class AppController:
             pass
         return "A"
 
-    def _get_spreadsheet_id(self) -> str:
-        candidates = [
-            st.secrets.get("spreadsheet_id"),
-            st.secrets.get("gsheet", {}).get("spreadsheet_id"),
-            st.secrets.get("google_sheets", {}).get("spreadsheet_id"),
-            st.secrets.get("connections", {}).get("gsheets", {}).get("spreadsheet_id"),
-        ]
-
-        for value in candidates:
-            if str(value or "").strip():
-                return str(value).strip()
-
-        st.error(
-            "Secrets に spreadsheet_id がありません。"
-            " 次のいずれかに設定してください: "
-            "[spreadsheet_id] / [gsheet.spreadsheet_id] / "
-            "[google_sheets.spreadsheet_id] / [connections.gsheets.spreadsheet_id]"
-        )
-        st.stop()
-
     def setup_services(self) -> None:
-        spreadsheet_id = self._get_spreadsheet_id()
+        spreadsheet_id = str(AppConfig.SPREADSHEET_ID).strip()
+        if not spreadsheet_id:
+            st.error("AppConfig.SPREADSHEET_ID が未設定です。")
+            st.stop()
+
         namespace = self._get_namespace()
 
         self.gs = GSheetService(spreadsheet_id=spreadsheet_id, namespace=namespace)
