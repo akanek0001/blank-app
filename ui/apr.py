@@ -761,6 +761,22 @@ USD領域
     # =========================================================
     # Main Render
     # =========================================================
+    def _get_default_watch_folder(self) -> str:
+        try:
+            return str(st.secrets.get("local_paths", {}).get("apr_watch_folder", "")).strip()
+        except Exception:
+            return ""
+
+    def _folder_image_files(self, folder_path: str) -> List[Path]:
+        path = Path(folder_path).expanduser()
+        if not path.exists() or not path.is_dir():
+            return []
+
+        exts = {".png", ".jpg", ".jpeg", ".webp"}
+        files = [p for p in path.iterdir() if p.is_file() and p.suffix.lower() in exts]
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return files
+
     def render(self, settings_df: pd.DataFrame, members_df: pd.DataFrame) -> None:
         st.subheader("📈 APR 確定")
         st.caption(f"{AppConfig.RANK_LABEL} / PERSONAL=個別計算 / GROUP=総額均等割 / 管理者: {AdminAuth.current_label()}")
