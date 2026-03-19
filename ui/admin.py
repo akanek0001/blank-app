@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Any
 
+import html
 import pandas as pd
 import streamlit as st
 
@@ -43,7 +44,7 @@ class AdminPage:
             return ""
 
     @classmethod
-    def _safe_df_for_streamlit(cls, df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    def _safe_df(cls, df: Optional[pd.DataFrame]) -> pd.DataFrame:
         if df is None:
             return pd.DataFrame()
 
@@ -59,7 +60,6 @@ class AdminPage:
         for col in out.columns:
             out[col] = out[col].map(cls._to_safe_cell)
 
-        out = out.astype("object")
         return out
 
     @staticmethod
@@ -73,10 +73,50 @@ class AdminPage:
             use_container_width=True,
         )
 
-    def _render_table_block(self, title: str, df: Optional[pd.DataFrame], file_name: str) -> None:
-        st.markdown(f"#### {title}")
+    @staticmethod
+    def _render_html_table(df: pd.DataFrame) -> None:
+        if df.empty:
+            st.info("データがありません。")
+            return
 
-        safe_df = self._safe_df_for_streamlit(df)
+        html_table = df.to_html(index=False, escape=True)
+        st.markdown(
+            """
+            <style>
+            .admin-table-wrap {
+                overflow-x: auto;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                background: white;
+                padding: 8px;
+            }
+            .admin-table-wrap table {
+                border-collapse: collapse;
+                width: 100%;
+                font-size: 13px;
+            }
+            .admin-table-wrap th, .admin-table-wrap td {
+                border: 1px solid #ddd;
+                padding: 6px 8px;
+                text-align: left;
+                vertical-align: top;
+                white-space: nowrap;
+            }
+            .admin-table-wrap th {
+                background: #f7f7f7;
+                position: sticky;
+                top: 0;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(f'<div class="admin-table-wrap">{html_table}</div>', unsafe_allow_html=True)
+
+    def _render_table_block(self, title: str, df: Optional[pd.DataFrame], file_name: str) -> None:
+        st.markdown(f"#### {html.escape(title)}")
+
+        safe_df = self._safe_df(df)
 
         if safe_df.empty:
             st.info(f"{title} は空です。")
@@ -88,7 +128,7 @@ class AdminPage:
         with c2:
             self._download_csv_button(f"{title} をCSV出力", safe_df, file_name)
 
-        st.dataframe(safe_df, use_container_width=True, hide_index=True)
+        self._render_html_table(safe_df)
 
     # =========================================================
     # Main
@@ -101,9 +141,9 @@ class AdminPage:
     ) -> None:
         st.subheader("🛠 管理ページ")
 
-        safe_settings = self._safe_df_for_streamlit(settings_df)
-        safe_members = self._safe_df_for_streamlit(members_df)
-        safe_line_users = self._safe_df_for_streamlit(line_users_df)
+        safe_settings = self._safe_df(settings_df)
+        safe_members = self._safe_df(members_df)
+        safe_line_users = self._safe_df(line_users_df)
 
         c1, c2, c3 = st.columns(3)
         with c1:
