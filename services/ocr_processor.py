@@ -26,10 +26,7 @@ class OCRBox:
 
 
 class OCRProcessor:
-    """
-    OCR専用クラス
-    UIから完全分離
-    """
+    """OCR専用クラス。UIから分離して利用する。"""
 
     MOBILE_TX_SCAN_BASE_TOP_RATIO = 430 / 2532
     MOBILE_TX_SCAN_STEP_RATIO = 123 / 2532
