@@ -11,18 +11,8 @@ from store.datastore import DataStore
 from ui.admin import AdminPage
 from ui.help import HelpPage
 
-try:
-    from core.auth import AdminAuth
-except Exception:
-    AdminAuth = None
-
 
 class AppController:
-    """
-    services / pages 分離後の接続用コントローラ。
-    APR は app_pages.apr_page.APRPage を使用する。
-    """
-
     def __init__(self):
         self.gs: GSheetService | None = None
         self.repo: Repository | None = None
@@ -32,25 +22,14 @@ class AppController:
         self.admin_page: AdminPage | None = None
         self.help_page: HelpPage | None = None
 
-    def _get_namespace(self) -> str:
-        try:
-            if AdminAuth is not None and hasattr(AdminAuth, "current_namespace"):
-                ns = AdminAuth.current_namespace()
-                if str(ns).strip():
-                    return str(ns).strip()
-        except Exception:
-            pass
-        return "A"
-
     def setup_services(self) -> None:
-        spreadsheet_id = str(AppConfig.SPREADSHEET_ID).strip()
-        if not spreadsheet_id:
-            st.error("AppConfig.SPREADSHEET_ID が未設定です。")
-            st.stop()
+        spreadsheet_id = AppConfig.SPREADSHEET_ID
+        namespace = "A"
 
-        namespace = self._get_namespace()
-
-        self.gs = GSheetService(spreadsheet_id=spreadsheet_id, namespace=namespace)
+        self.gs = GSheetService(
+            spreadsheet_id=spreadsheet_id,
+            namespace=namespace,
+        )
         self.repo = Repository(self.gs)
         self.engine = FinanceEngine()
         self.store = DataStore(self.repo)
