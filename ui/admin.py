@@ -5,8 +5,15 @@ from typing import Optional, Any
 import pandas as pd
 import streamlit as st
 
+from repository.repository import Repository
+from store.datastore import DataStore
+
 
 class AdminPage:
+    def __init__(self, repo: Repository, store: DataStore):
+        self.repo = repo
+        self.store = store
+
     # =========================================================
     # Safe convert
     # =========================================================
@@ -45,22 +52,14 @@ class AdminPage:
         except Exception:
             return pd.DataFrame()
 
-        # 落ちやすい内部列を除外
         out = out.drop(columns=["_row_id"], errors="ignore")
-
-        # index も安全化
         out = out.reset_index(drop=True)
-
-        # 列名を文字列化
         out.columns = [cls._to_safe_cell(c) for c in out.columns]
 
-        # 各セルを完全に文字列化
         for col in out.columns:
             out[col] = out[col].map(cls._to_safe_cell)
 
-        # 念のため object に固定
         out = out.astype("object")
-
         return out
 
     @staticmethod
