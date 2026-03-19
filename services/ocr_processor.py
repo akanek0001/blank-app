@@ -1,7 +1,6 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import re
 
 import pandas as pd
@@ -28,31 +27,10 @@ class OCRBox:
 
 class OCRProcessor:
     """
-    OCRの責務をまとめるクラス
-    - platform 判定
-    - Settings からの座標読取
-    - SmartVault OCR
-    - 取引履歴OCR
+    OCR専用クラス
+    UIから完全分離
     """
 
-    OCR_TX_HISTORY_HEADERS = [
-        "Unique_Key",
-        "Date_Label",
-        "Time_Label",
-        "Type_Label",
-        "Amount_USD",
-        "Token_Amount",
-        "Token_Symbol",
-        "Source_Image",
-        "Source_Project",
-        "Platform",
-        "OCR_Raw_Text",
-        "CreatedAt_JST",
-    ]
-
-    # =========================================================
-    # Mobile Layout
-    # =========================================================
     MOBILE_TX_SCAN_BASE_TOP_RATIO = 430 / 2532
     MOBILE_TX_SCAN_STEP_RATIO = 123 / 2532
     MOBILE_TX_SCAN_MAX_ROWS = 10
@@ -72,9 +50,6 @@ class OCRProcessor:
     MOBILE_TX_USD_TOP_OFFSET = 28 / 2532
     MOBILE_TX_USD_BOTTOM_OFFSET = 92 / 2532
 
-    # =========================================================
-    # PC Layout
-    # =========================================================
     PC_TX_SCAN_BASE_TOP_RATIO = 0.18
     PC_TX_SCAN_STEP_RATIO = 0.08
     PC_TX_SCAN_MAX_ROWS = 12
@@ -94,22 +69,15 @@ class OCRProcessor:
     PC_TX_USD_TOP_OFFSET = 0.02
     PC_TX_USD_BOTTOM_OFFSET = 0.08
 
-    # =========================================================
-    # Platform
-    # =========================================================
     @staticmethod
     def detect_platform(file_bytes: Optional[bytes]) -> str:
         if not file_bytes:
             return "mobile"
-
         try:
             return "mobile" if U.is_mobile_tall_image(file_bytes) else "pc"
         except Exception:
             return "mobile"
 
-    # =========================================================
-    # Settings
-    # =========================================================
     @staticmethod
     def get_setting_row(settings_df: pd.DataFrame, project: str) -> Optional[pd.Series]:
         try:
@@ -128,20 +96,13 @@ class OCRProcessor:
         settings_df: pd.DataFrame,
         project: str,
         platform: str,
-    ) -> Tuple[float, float, float, float]:
+    ):
         srow = cls.get_setting_row(settings_df, project)
+        if srow is None:
+            raise ValueError(f"Settings にプロジェクト '{project}' の設定行がありません。")
 
         if platform == "mobile":
-            defaults = {
-                "left": 0.03,
-                "top": 0.14,
-                "right": 0.97,
-                "bottom": 0.92,
-            }
-
-            if srow is None:
-                raise ValueError(f"Settings にプロジェクト '{project}' の設定行がありません。")
-
+            defaults = {"left": 0.03, "top": 0.14, "right": 0.97, "bottom": 0.92}
             return (
                 U.to_ratio(srow.get("Crop_Left_Ratio_Mobile", defaults["left"]), defaults["left"]),
                 U.to_ratio(srow.get("Crop_Top_Ratio_Mobile", defaults["top"]), defaults["top"]),
@@ -149,16 +110,7 @@ class OCRProcessor:
                 U.to_ratio(srow.get("Crop_Bottom_Ratio_Mobile", defaults["bottom"]), defaults["bottom"]),
             )
 
-        defaults = {
-            "left": 0.05,
-            "top": 0.18,
-            "right": 0.95,
-            "bottom": 0.88,
-        }
-
-        if srow is None:
-            raise ValueError(f"Settings にプロジェクト '{project}' の設定行がありません。")
-
+        defaults = {"left": 0.05, "top": 0.18, "right": 0.95, "bottom": 0.88}
         return (
             U.to_ratio(srow.get("Crop_Left_Ratio_PC", defaults["left"]), defaults["left"]),
             U.to_ratio(srow.get("Crop_Top_Ratio_PC", defaults["top"]), defaults["top"]),
@@ -174,114 +126,50 @@ class OCRProcessor:
         platform: str,
     ) -> Dict[str, OCRBox]:
         srow = cls.get_setting_row(settings_df, project)
-
         if srow is None:
             raise ValueError(f"Settings にプロジェクト '{project}' の設定行がありません。")
 
         if platform == "mobile":
             required_cols = [
-                "SV_Total_Liquidity_Left",
-                "SV_Total_Liquidity_Top",
-                "SV_Total_Liquidity_Right",
-                "SV_Total_Liquidity_Bottom",
-                "SV_Yesterday_Profit_Left",
-                "SV_Yesterday_Profit_Top",
-                "SV_Yesterday_Profit_Right",
-                "SV_Yesterday_Profit_Bottom",
-                "SV_APR_Left",
-                "SV_APR_Top",
-                "SV_APR_Right",
-                "SV_APR_Bottom",
+                "SV_Total_Liquidity_Left", "SV_Total_Liquidity_Top", "SV_Total_Liquidity_Right", "SV_Total_Liquidity_Bottom",
+                "SV_Yesterday_Profit_Left", "SV_Yesterday_Profit_Top", "SV_Yesterday_Profit_Right", "SV_Yesterday_Profit_Bottom",
+                "SV_APR_Left", "SV_APR_Top", "SV_APR_Right", "SV_APR_Bottom",
             ]
-
             missing = [c for c in required_cols if c not in srow.index]
             if missing:
-                raise ValueError(
-                    f"Settings に mobile 用 SmartVault 座標列がありません: {', '.join(missing)}"
-                )
-
+                raise ValueError(f"Settings に mobile 用 SmartVault 座標列がありません: {', '.join(missing)}")
             values = {c: str(srow.get(c, "")).strip() for c in required_cols}
             empty = [k for k, v in values.items() if v == ""]
             if empty:
-                raise ValueError(
-                    f"Settings の mobile 用 SmartVault 座標が未入力です: {', '.join(empty)}"
-                )
+                raise ValueError(f"Settings の mobile 用 SmartVault 座標が未入力です: {', '.join(empty)}")
 
             return {
-                "TOTAL_LIQUIDITY": OCRBox(
-                    left=float(values["SV_Total_Liquidity_Left"]),
-                    top=float(values["SV_Total_Liquidity_Top"]),
-                    right=float(values["SV_Total_Liquidity_Right"]),
-                    bottom=float(values["SV_Total_Liquidity_Bottom"]),
-                ),
-                "YESTERDAY_PROFIT": OCRBox(
-                    left=float(values["SV_Yesterday_Profit_Left"]),
-                    top=float(values["SV_Yesterday_Profit_Top"]),
-                    right=float(values["SV_Yesterday_Profit_Right"]),
-                    bottom=float(values["SV_Yesterday_Profit_Bottom"]),
-                ),
-                "APR": OCRBox(
-                    left=float(values["SV_APR_Left"]),
-                    top=float(values["SV_APR_Top"]),
-                    right=float(values["SV_APR_Right"]),
-                    bottom=float(values["SV_APR_Bottom"]),
-                ),
+                "TOTAL_LIQUIDITY": OCRBox(float(values["SV_Total_Liquidity_Left"]), float(values["SV_Total_Liquidity_Top"]), float(values["SV_Total_Liquidity_Right"]), float(values["SV_Total_Liquidity_Bottom"])),
+                "YESTERDAY_PROFIT": OCRBox(float(values["SV_Yesterday_Profit_Left"]), float(values["SV_Yesterday_Profit_Top"]), float(values["SV_Yesterday_Profit_Right"]), float(values["SV_Yesterday_Profit_Bottom"])),
+                "APR": OCRBox(float(values["SV_APR_Left"]), float(values["SV_APR_Top"]), float(values["SV_APR_Right"]), float(values["SV_APR_Bottom"])),
             }
 
         required_cols = [
-            "SV_Total_Liquidity_Left_PC",
-            "SV_Total_Liquidity_Top_PC",
-            "SV_Total_Liquidity_Right_PC",
-            "SV_Total_Liquidity_Bottom_PC",
-            "SV_Yesterday_Profit_Left_PC",
-            "SV_Yesterday_Profit_Top_PC",
-            "SV_Yesterday_Profit_Right_PC",
-            "SV_Yesterday_Profit_Bottom_PC",
-            "SV_APR_Left_PC",
-            "SV_APR_Top_PC",
-            "SV_APR_Right_PC",
-            "SV_APR_Bottom_PC",
+            "SV_Total_Liquidity_Left_PC", "SV_Total_Liquidity_Top_PC", "SV_Total_Liquidity_Right_PC", "SV_Total_Liquidity_Bottom_PC",
+            "SV_Yesterday_Profit_Left_PC", "SV_Yesterday_Profit_Top_PC", "SV_Yesterday_Profit_Right_PC", "SV_Yesterday_Profit_Bottom_PC",
+            "SV_APR_Left_PC", "SV_APR_Top_PC", "SV_APR_Right_PC", "SV_APR_Bottom_PC",
         ]
-
         missing = [c for c in required_cols if c not in srow.index]
         if missing:
-            raise ValueError(
-                f"Settings に PC 用 SmartVault 座標列がありません: {', '.join(missing)}"
-            )
-
+            raise ValueError(f"Settings に PC 用 SmartVault 座標列がありません: {', '.join(missing)}")
         values = {c: str(srow.get(c, "")).strip() for c in required_cols}
         empty = [k for k, v in values.items() if v == ""]
         if empty:
-            raise ValueError(
-                f"Settings の PC 用 SmartVault 座標が未入力です: {', '.join(empty)}"
-            )
+            raise ValueError(f"Settings の PC 用 SmartVault 座標が未入力です: {', '.join(empty)}")
 
         return {
-            "TOTAL_LIQUIDITY": OCRBox(
-                left=float(values["SV_Total_Liquidity_Left_PC"]),
-                top=float(values["SV_Total_Liquidity_Top_PC"]),
-                right=float(values["SV_Total_Liquidity_Right_PC"]),
-                bottom=float(values["SV_Total_Liquidity_Bottom_PC"]),
-            ),
-            "YESTERDAY_PROFIT": OCRBox(
-                left=float(values["SV_Yesterday_Profit_Left_PC"]),
-                top=float(values["SV_Yesterday_Profit_Top_PC"]),
-                right=float(values["SV_Yesterday_Profit_Right_PC"]),
-                bottom=float(values["SV_Yesterday_Profit_Bottom_PC"]),
-            ),
-            "APR": OCRBox(
-                left=float(values["SV_APR_Left_PC"]),
-                top=float(values["SV_APR_Top_PC"]),
-                right=float(values["SV_APR_Right_PC"]),
-                bottom=float(values["SV_APR_Bottom_PC"]),
-            ),
+            "TOTAL_LIQUIDITY": OCRBox(float(values["SV_Total_Liquidity_Left_PC"]), float(values["SV_Total_Liquidity_Top_PC"]), float(values["SV_Total_Liquidity_Right_PC"]), float(values["SV_Total_Liquidity_Bottom_PC"])),
+            "YESTERDAY_PROFIT": OCRBox(float(values["SV_Yesterday_Profit_Left_PC"]), float(values["SV_Yesterday_Profit_Top_PC"]), float(values["SV_Yesterday_Profit_Right_PC"]), float(values["SV_Yesterday_Profit_Bottom_PC"])),
+            "APR": OCRBox(float(values["SV_APR_Left_PC"]), float(values["SV_APR_Top_PC"]), float(values["SV_APR_Right_PC"]), float(values["SV_APR_Bottom_PC"])),
         }
 
-    # =========================================================
-    # OCR Core
-    # =========================================================
     @staticmethod
-    def normalize_ocr_text(text: str) -> str:
+    def normalize_text(text: str) -> str:
         t = str(text or "")
         t = t.replace("月 ", "月")
         t = t.replace(" 日", "日")
@@ -295,10 +183,10 @@ class OCRProcessor:
     def ocr_crop_text(file_bytes: bytes, box: OCRBox) -> str:
         return ExternalService.ocr_space_extract_text_with_crop(
             file_bytes=file_bytes,
-            crop_left_ratio=float(box.left),
-            crop_top_ratio=float(box.top),
-            crop_right_ratio=float(box.right),
-            crop_bottom_ratio=float(box.bottom),
+            crop_left_ratio=box.left,
+            crop_top_ratio=box.top,
+            crop_right_ratio=box.right,
+            crop_bottom_ratio=box.bottom,
         )
 
     @staticmethod
@@ -321,11 +209,7 @@ class OCRProcessor:
         )
 
     @classmethod
-    def ocr_smartvault_metrics(
-        cls,
-        file_bytes: bytes,
-        boxes: Dict[str, OCRBox],
-    ) -> Dict[str, Any]:
+    def extract_metrics(cls, file_bytes: bytes, boxes: Dict[str, OCRBox]) -> Dict[str, Any]:
         total_text = cls.ocr_crop_text(file_bytes, boxes["TOTAL_LIQUIDITY"])
         profit_text = cls.ocr_crop_text(file_bytes, boxes["YESTERDAY_PROFIT"])
         apr_text = cls.ocr_crop_text(file_bytes, boxes["APR"])
@@ -337,25 +221,20 @@ class OCRProcessor:
         total_liquidity = U.pick_total_liquidity(total_vals)
         yesterday_profit = U.pick_yesterday_profit(profit_vals)
         apr_value = apr_vals[0] if apr_vals else None
-        boxed_preview = U.draw_ocr_boxes(
-            file_bytes,
-            {k: v.to_dict() for k, v in boxes.items()},
-        )
+
+        boxed_preview = U.draw_ocr_boxes(file_bytes, {k: v.to_dict() for k, v in boxes.items()})
 
         return {
-            "boxes": {k: v.to_dict() for k, v in boxes.items()},
-            "total_text": total_text,
-            "profit_text": profit_text,
-            "apr_text": apr_text,
             "total_liquidity": total_liquidity,
             "yesterday_profit": yesterday_profit,
             "apr_value": apr_value,
-            "boxed_preview": boxed_preview,
+            "preview": boxed_preview,
+            "total_text": total_text,
+            "profit_text": profit_text,
+            "apr_text": apr_text,
+            "boxes": {k: v.to_dict() for k, v in boxes.items()},
         }
 
-    # =========================================================
-    # Transaction OCR
-    # =========================================================
     @classmethod
     def get_tx_layout(cls, platform: str) -> Dict[str, float]:
         if platform == "mobile":
@@ -376,7 +255,6 @@ class OCRProcessor:
                 "usd_top_offset": cls.MOBILE_TX_USD_TOP_OFFSET,
                 "usd_bottom_offset": cls.MOBILE_TX_USD_BOTTOM_OFFSET,
             }
-
         return {
             "base_top": cls.PC_TX_SCAN_BASE_TOP_RATIO,
             "step": cls.PC_TX_SCAN_STEP_RATIO,
@@ -396,36 +274,28 @@ class OCRProcessor:
         }
 
     @classmethod
-    def extract_date_label(cls, text: str) -> str:
-        t = cls.normalize_ocr_text(text)
-        patterns = [
-            r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
-            r"(\d{1,2}\s*月\s*\d{1,2})",
-            r"(\d{1,2}/\d{1,2})",
-            r"(\d{1,2}-\d{1,2})",
-        ]
-        for pat in patterns:
-            m = re.search(pat, t)
+    def extract_date(cls, text: str) -> str:
+        t = cls.normalize_text(text)
+        patterns = [r"(\d{1,2}\s*月\s*\d{1,2}\s*日)", r"(\d{1,2}/\d{1,2})", r"(\d{1,2}-\d{1,2})"]
+        for p in patterns:
+            m = re.search(p, t)
             if m:
-                return cls.normalize_ocr_text(m.group(1)).replace(" ", "")
+                return cls.normalize_text(m.group(1)).replace(" ", "")
         return ""
 
     @classmethod
-    def extract_time_label(cls, text: str) -> str:
-        t = cls.normalize_ocr_text(text)
-        patterns = [
-            r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))",
-            r"(\d{1,2}:\d{2})",
-        ]
-        for pat in patterns:
-            m = re.search(pat, t)
+    def extract_time(cls, text: str) -> str:
+        t = cls.normalize_text(text)
+        patterns = [r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))", r"(\d{1,2}:\d{2})"]
+        for p in patterns:
+            m = re.search(p, t)
             if m:
-                return cls.normalize_ocr_text(m.group(1)).lower()
+                return cls.normalize_text(m.group(1)).lower()
         return ""
 
     @classmethod
     def extract_type_label(cls, text: str) -> str:
-        t = cls.normalize_ocr_text(text)
+        t = cls.normalize_text(text)
         if "受け取ったUSDC" in t or "受け取った USDC" in t:
             return "受け取ったUSDC"
         if "トークンを受け取りました" in t:
@@ -437,15 +307,14 @@ class OCRProcessor:
         return ""
 
     @classmethod
-    def extract_amount_usd(cls, text: str) -> Optional[float]:
-        t = cls.normalize_ocr_text(text)
+    def extract_amount(cls, text: str) -> Optional[float]:
+        t = cls.normalize_text(text)
         m = re.search(r"\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)", t)
         if m:
             try:
                 return float(m.group(1).replace(",", ""))
             except Exception:
                 return None
-
         vals = U.extract_usd_candidates(t)
         if vals:
             positives = [float(v) for v in vals if float(v) >= 0]
@@ -454,97 +323,60 @@ class OCRProcessor:
         return None
 
     @staticmethod
-    def make_tx_block_key(
-        date_label: str,
-        time_label: str,
-        type_label: str,
-        amount_usd: float,
-        platform: str,
-    ) -> str:
-        return f"{platform}|{date_label}|{time_label}|{type_label}|{float(amount_usd):.2f}"
+    def make_unique_key(date_label: str, time_label: str, type_label: str, amount: float, platform: str) -> str:
+        return f"{platform}|{date_label}|{time_label}|{type_label}|{amount:.2f}"
 
     @classmethod
-    def extract_transaction_rows(
-        cls,
-        file_bytes: bytes,
-        platform: str,
-    ) -> List[Dict[str, Any]]:
+    def extract_transaction_rows(cls, file_bytes: bytes, platform: str) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         layout = cls.get_tx_layout(platform)
 
         for i in range(int(layout["max_rows"])):
             row_top = cls.row_top_ratio(float(layout["base_top"]), float(layout["step"]), i)
 
-            date_box = cls.build_region_box(
-                row_top,
-                float(layout["date_left"]),
-                float(layout["date_right"]),
-                float(layout["date_top_offset"]),
-                float(layout["date_bottom_offset"]),
-            )
-            type_box = cls.build_region_box(
-                row_top,
-                float(layout["type_left"]),
-                float(layout["type_right"]),
-                float(layout["type_top_offset"]),
-                float(layout["type_bottom_offset"]),
-            )
-            usd_box = cls.build_region_box(
-                row_top,
-                float(layout["usd_left"]),
-                float(layout["usd_right"]),
-                float(layout["usd_top_offset"]),
-                float(layout["usd_bottom_offset"]),
-            )
+            date_box = cls.build_region_box(row_top, layout["date_left"], layout["date_right"], layout["date_top_offset"], layout["date_bottom_offset"])
+            type_box = cls.build_region_box(row_top, layout["type_left"], layout["type_right"], layout["type_top_offset"], layout["type_bottom_offset"])
+            usd_box = cls.build_region_box(row_top, layout["usd_left"], layout["usd_right"], layout["usd_top_offset"], layout["usd_bottom_offset"])
 
-            date_text = cls.normalize_ocr_text(cls.ocr_crop_text(file_bytes, date_box))
-            type_text = cls.normalize_ocr_text(cls.ocr_crop_text(file_bytes, type_box))
-            usd_text = cls.normalize_ocr_text(cls.ocr_crop_text(file_bytes, usd_box))
+            date_text = cls.normalize_text(cls.ocr_crop_text(file_bytes, date_box))
+            type_text = cls.normalize_text(cls.ocr_crop_text(file_bytes, type_box))
+            usd_text = cls.normalize_text(cls.ocr_crop_text(file_bytes, usd_box))
 
             joined_raw = "\n".join([date_text, type_text, usd_text]).strip()
             if not joined_raw:
                 continue
 
-            date_label = cls.extract_date_label(date_text or joined_raw)
-            time_label = cls.extract_time_label(date_text or joined_raw)
+            date_label = cls.extract_date(date_text or joined_raw)
+            time_label = cls.extract_time(date_text or joined_raw)
             type_label = cls.extract_type_label(type_text or joined_raw)
-            amount_usd = cls.extract_amount_usd(usd_text or joined_raw)
+            amount_usd = cls.extract_amount(usd_text or joined_raw)
 
             if amount_usd is None or amount_usd <= 0:
                 continue
             if not date_label or not time_label or not type_label:
                 continue
-
             if platform == "mobile" and type_label != "受け取ったUSDC":
                 continue
             if platform == "pc" and type_label == "承認":
                 continue
 
-            unique_key = cls.make_tx_block_key(
-                date_label=date_label,
-                time_label=time_label,
-                type_label=type_label,
-                amount_usd=amount_usd,
-                platform=platform,
-            )
+            unique_key = cls.make_unique_key(date_label, time_label, type_label, amount_usd, platform)
 
-            rows.append(
-                {
-                    "row_index": i + 1,
-                    "date_label": date_label,
-                    "time_label": time_label,
-                    "type_label": type_label,
-                    "amount_usd": float(amount_usd),
-                    "unique_key": unique_key,
-                    "platform": platform,
-                    "raw_text": joined_raw,
-                    "date_box": date_box.to_dict(),
-                    "type_box": type_box.to_dict(),
-                    "usd_box": usd_box.to_dict(),
-                    "date_text": date_text,
-                    "type_text": type_text,
-                    "usd_text": usd_text,
-                }
-            )
+            rows.append({
+                "row_index": i + 1,
+                "date_label": date_label,
+                "time_label": time_label,
+                "type_label": type_label,
+                "amount_usd": float(amount_usd),
+                "unique_key": unique_key,
+                "platform": platform,
+                "raw_text": joined_raw,
+                "date_box": date_box.to_dict(),
+                "type_box": type_box.to_dict(),
+                "usd_box": usd_box.to_dict(),
+                "date_text": date_text,
+                "type_text": type_text,
+                "usd_text": usd_text,
+            })
 
         return rows
