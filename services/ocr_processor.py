@@ -37,23 +37,24 @@ class OCRProcessor:
 
     # =========================================================
     # Defaults: Mobile transaction OCR
+    # 画像 828x1792 基準で調整
     # =========================================================
     DEFAULT_TX_LAYOUT_MOBILE = {
-        "base_top": 430 / 2532,
-        "step": 123 / 2532,
-        "max_rows": 10,
-        "date_left": 0.02,
-        "date_right": 0.40,
-        "date_top_offset": 0.00,
-        "date_bottom_offset": 0.03,
-        "type_left": 0.08,
-        "type_right": 0.65,
+        "base_top": 0.220,
+        "step": 0.115,
+        "max_rows": 12,
+        "date_left": 0.050,
+        "date_right": 0.450,
+        "date_top_offset": 0.000,
+        "date_bottom_offset": 0.030,
+        "type_left": 0.180,
+        "type_right": 0.700,
         "type_top_offset": 0.015,
-        "type_bottom_offset": 0.05,
-        "usd_left": 0.65,
-        "usd_right": 0.93,
-        "usd_top_offset": 0.01,
-        "usd_bottom_offset": 0.04,
+        "type_bottom_offset": 0.055,
+        "usd_left": 0.720,
+        "usd_right": 0.960,
+        "usd_top_offset": 0.010,
+        "usd_bottom_offset": 0.055,
     }
 
     # =========================================================
@@ -419,6 +420,18 @@ class OCRProcessor:
         return f"{platform}|{date_label}|{time_label}|{type_label}|{amount:.2f}"
 
     @classmethod
+    def _is_target_transaction(cls, type_label: str, raw_text: str, platform: str) -> bool:
+        """
+        受け取ったUSDCのみ通す
+        """
+        t = cls.normalize_text(type_label or raw_text)
+
+        if "受け取ったUSDC" in t or "受け取った USDC" in t:
+            return True
+
+        return False
+
+    @classmethod
     def extract_transaction_rows(
         cls,
         file_bytes: bytes,
@@ -469,21 +482,19 @@ class OCRProcessor:
 
             if amount_usd is None or amount_usd <= 0:
                 continue
-            if not date_label or not time_label or not type_label:
+            if not date_label or not time_label:
                 continue
-            if platform == "mobile" and type_label != "受け取ったUSDC":
-                continue
-            if platform == "pc" and type_label == "承認":
+            if not cls._is_target_transaction(type_label, joined_raw, platform):
                 continue
 
-            unique_key = cls.make_unique_key(date_label, time_label, type_label, amount_usd, platform)
+            unique_key = cls.make_unique_key(date_label, time_label, type_label or "受け取ったUSDC", amount_usd, platform)
 
             rows.append(
                 {
                     "row_index": i + 1,
                     "date_label": date_label,
                     "time_label": time_label,
-                    "type_label": type_label,
+                    "type_label": type_label or "受け取ったUSDC",
                     "amount_usd": float(amount_usd),
                     "unique_key": unique_key,
                     "platform": platform,
@@ -507,9 +518,6 @@ class OCRProcessor:
         platform: str,
         rows_to_show: int = 3,
     ) -> Dict[str, Dict[str, float]]:
-        """
-        3領域OCRの現在設定を赤枠プレビュー用に返す
-        """
         layout = cls.get_tx_layout(settings_df, project, platform)
         out: Dict[str, Dict[str, float]] = {}
 
