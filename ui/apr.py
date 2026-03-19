@@ -98,121 +98,18 @@ class APRPage:
     def _detect_platform(self, file_bytes: Optional[bytes]) -> str:
         if not file_bytes:
             return "mobile"
+
         try:
             return "mobile" if U.is_mobile_tall_image(file_bytes) else "pc"
         except Exception:
             return "mobile"
 
-    def _ocr_crop_text(self, file_bytes: bytes, box: Dict[str, float]) -> str:
-        return ExternalService.ocr_space_extract_text_with_crop(
-            file_bytes=file_bytes,
-            crop_left_ratio=float(box["left"]),
-            crop_top_ratio=float(box["top"]),
-            crop_right_ratio=float(box["right"]),
-            crop_bottom_ratio=float(box["bottom"]),
-        )
-
-    def _row_top_ratio(self, base_top: float, step: float, row_index: int) -> float:
-        return base_top + (step * row_index)
-
-    def _build_region_box(
-        self,
-        row_top: float,
-        left_ratio: float,
-        right_ratio: float,
-        top_offset_ratio: float,
-        bottom_offset_ratio: float,
-    ) -> Dict[str, float]:
-        return {
-            "left": float(left_ratio),
-            "top": float(row_top + top_offset_ratio),
-            "right": float(right_ratio),
-            "bottom": float(row_top + bottom_offset_ratio),
-        }
-
-    def _extract_date_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        patterns = [
-            r"(\d{1,2}\s*月\s*\d{1,2}\s*日)",
-            r"(\d{1,2}\s*月\s*\d{1,2})",
-            r"(\d{1,2}/\d{1,2})",
-            r"(\d{1,2}-\d{1,2})",
-        ]
-        for pat in patterns:
-            m = re.search(pat, t)
-            if m:
-                return self._normalize_ocr_text(m.group(1)).replace(" ", "")
-        return ""
-
-    def _extract_time_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        patterns = [
-            r"(\d{1,2}:\d{2}\s*(?:am|pm|AM|PM))",
-            r"(\d{1,2}:\d{2})",
-        ]
-        for pat in patterns:
-            m = re.search(pat, t)
-            if m:
-                return self._normalize_ocr_text(m.group(1)).lower()
-        return ""
-
-    def _extract_type_label(self, text: str) -> str:
-        t = self._normalize_ocr_text(text)
-        if "受け取ったUSDC" in t or "受け取った USDC" in t:
-            return "受け取ったUSDC"
-        if "トークンを受け取りました" in t:
-            return "トークンを受け取りました"
-        if "承認" in t:
-            return "承認"
-        if "USDC" in t:
-            return "USDC"
-        return ""
-
-    def _extract_amount_usd(self, text: str) -> Optional[float]:
-        t = self._normalize_ocr_text(text)
-        m = re.search(r"\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)", t)
-        if m:
-            try:
-                return float(m.group(1).replace(",", ""))
-            except Exception:
-                return None
-
-        vals = U.extract_usd_candidates(t)
-        if vals:
-            positives = [float(v) for v in vals if float(v) >= 0]
-            if positives:
-                return max(positives)
-        return None
-
-    def _extract_token_amount_and_symbol(self, text: str) -> Tuple[Optional[float], str]:
-        t = self._normalize_ocr_text(text)
-        patterns = [
-            r"(\d+(?:,\d{3})*(?:\.\d+)?)\s*(USDC|ETH|BTC|USDT)",
-            r"(USDC|ETH|BTC|USDT)\s*(\d+(?:,\d{3})*(?:\.\d+)?)",
-        ]
-        for pat in patterns:
-            m = re.search(pat, t, flags=re.IGNORECASE)
-            if not m:
-                continue
-            g1 = str(m.group(1)).strip()
-            g2 = str(m.group(2)).strip()
-            try:
-                if re.match(r"^\d", g1):
-                    return float(g1.replace(",", "")), g2.upper()
-                return float(g2.replace(",", "")), g1.upper()
-            except Exception:
-                continue
-        return None, ""
-
-    def _make_tx_block_key(self, date_label: str, time_label: str, type_label: str, amount_usd: float, platform: str) -> str:
-        return f"{platform}|{date_label}|{time_label}|{type_label}|{float(amount_usd):.2f}"
-
-    # =========================================================
-    # Settings 読み取り
-    # =========================================================
     def _get_setting_row(self, settings_df: pd.DataFrame, project: str) -> Optional[pd.Series]:
         try:
-            return settings_df[settings_df["Project_Name"] == str(project)].iloc[0]
+            rows = settings_df[settings_df["Project_Name"].astype(str).str.strip() == str(project).strip()]
+            if rows.empty:
+                return None
+            return rows.iloc[0]
         except Exception:
             return None
 
@@ -223,96 +120,118 @@ class APRPage:
         platform: str,
     ) -> Tuple[float, float, float, float]:
         srow = self._get_setting_row(settings_df, project)
+
         if platform == "mobile":
-            d = AppConfig.OCR_DEFAULTS_MOBILE
+            defaults = {
+                "left": 0.03,
+                "top": 0.14,
+                "right": 0.97,
+                "bottom": 0.92,
+            }
+
             if srow is None:
                 return (
-                    float(d["Crop_Left_Ratio_Mobile"]),
-                    float(d["Crop_Top_Ratio_Mobile"]),
-                    float(d["Crop_Right_Ratio_Mobile"]),
-                    float(d["Crop_Bottom_Ratio_Mobile"]),
+                    defaults["left"],
+                    defaults["top"],
+                    defaults["right"],
+                    defaults["bottom"],
                 )
+
             return (
-                U.to_ratio(srow.get("Crop_Left_Ratio_Mobile", d["Crop_Left_Ratio_Mobile"]), d["Crop_Left_Ratio_Mobile"]),
-                U.to_ratio(srow.get("Crop_Top_Ratio_Mobile", d["Crop_Top_Ratio_Mobile"]), d["Crop_Top_Ratio_Mobile"]),
-                U.to_ratio(srow.get("Crop_Right_Ratio_Mobile", d["Crop_Right_Ratio_Mobile"]), d["Crop_Right_Ratio_Mobile"]),
-                U.to_ratio(srow.get("Crop_Bottom_Ratio_Mobile", d["Crop_Bottom_Ratio_Mobile"]), d["Crop_Bottom_Ratio_Mobile"]),
+                U.to_ratio(srow.get("Crop_Left_Ratio_Mobile", defaults["left"]), defaults["left"]),
+                U.to_ratio(srow.get("Crop_Top_Ratio_Mobile", defaults["top"]), defaults["top"]),
+                U.to_ratio(srow.get("Crop_Right_Ratio_Mobile", defaults["right"]), defaults["right"]),
+                U.to_ratio(srow.get("Crop_Bottom_Ratio_Mobile", defaults["bottom"]), defaults["bottom"]),
             )
 
-        d = AppConfig.OCR_DEFAULTS_PC
+        defaults = {
+            "left": 0.05,
+            "top": 0.18,
+            "right": 0.95,
+            "bottom": 0.88,
+        }
+
         if srow is None:
             return (
-                float(d["Crop_Left_Ratio_PC"]),
-                float(d["Crop_Top_Ratio_PC"]),
-                float(d["Crop_Right_Ratio_PC"]),
-                float(d["Crop_Bottom_Ratio_PC"]),
+                defaults["left"],
+                defaults["top"],
+                defaults["right"],
+                defaults["bottom"],
             )
+
         return (
-            U.to_ratio(srow.get("Crop_Left_Ratio_PC", d["Crop_Left_Ratio_PC"]), d["Crop_Left_Ratio_PC"]),
-            U.to_ratio(srow.get("Crop_Top_Ratio_PC", d["Crop_Top_Ratio_PC"]), d["Crop_Top_Ratio_PC"]),
-            U.to_ratio(srow.get("Crop_Right_Ratio_PC", d["Crop_Right_Ratio_PC"]), d["Crop_Right_Ratio_PC"]),
-            U.to_ratio(srow.get("Crop_Bottom_Ratio_PC", d["Crop_Bottom_Ratio_PC"]), d["Crop_Bottom_Ratio_PC"]),
+            U.to_ratio(srow.get("Crop_Left_Ratio_PC", defaults["left"]), defaults["left"]),
+            U.to_ratio(srow.get("Crop_Top_Ratio_PC", defaults["top"]), defaults["top"]),
+            U.to_ratio(srow.get("Crop_Right_Ratio_PC", defaults["right"]), defaults["right"]),
+            U.to_ratio(srow.get("Crop_Bottom_Ratio_PC", defaults["bottom"]), defaults["bottom"]),
         )
 
-    def _get_smartvault_boxes(self, settings_df: pd.DataFrame, project: str, platform: str) -> Dict[str, Dict[str, float]]:
+    def _get_smartvault_boxes(
+        self,
+        settings_df: pd.DataFrame,
+        project: str,
+        platform: str,
+    ) -> Dict[str, Dict[str, float]]:
         srow = self._get_setting_row(settings_df, project)
 
         if platform == "mobile":
-            default_boxes = {
+            defaults = {
                 "TOTAL_LIQUIDITY": {"left": 0.05, "top": 0.25, "right": 0.40, "bottom": 0.34},
                 "YESTERDAY_PROFIT": {"left": 0.41, "top": 0.25, "right": 0.69, "bottom": 0.34},
                 "APR": {"left": 0.70, "top": 0.25, "right": 0.93, "bottom": 0.34},
             }
+
             if srow is None:
-                return default_boxes
+                return defaults
 
             return {
                 "TOTAL_LIQUIDITY": {
-                    "left": float(srow.get("SV_Total_Liquidity_Left", default_boxes["TOTAL_LIQUIDITY"]["left"])),
-                    "top": float(srow.get("SV_Total_Liquidity_Top", default_boxes["TOTAL_LIQUIDITY"]["top"])),
-                    "right": float(srow.get("SV_Total_Liquidity_Right", default_boxes["TOTAL_LIQUIDITY"]["right"])),
-                    "bottom": float(srow.get("SV_Total_Liquidity_Bottom", default_boxes["TOTAL_LIQUIDITY"]["bottom"])),
+                    "left": U.to_ratio(srow.get("SV_Total_Liquidity_Left", defaults["TOTAL_LIQUIDITY"]["left"]), defaults["TOTAL_LIQUIDITY"]["left"]),
+                    "top": U.to_ratio(srow.get("SV_Total_Liquidity_Top", defaults["TOTAL_LIQUIDITY"]["top"]), defaults["TOTAL_LIQUIDITY"]["top"]),
+                    "right": U.to_ratio(srow.get("SV_Total_Liquidity_Right", defaults["TOTAL_LIQUIDITY"]["right"]), defaults["TOTAL_LIQUIDITY"]["right"]),
+                    "bottom": U.to_ratio(srow.get("SV_Total_Liquidity_Bottom", defaults["TOTAL_LIQUIDITY"]["bottom"]), defaults["TOTAL_LIQUIDITY"]["bottom"]),
                 },
                 "YESTERDAY_PROFIT": {
-                    "left": float(srow.get("SV_Yesterday_Profit_Left", default_boxes["YESTERDAY_PROFIT"]["left"])),
-                    "top": float(srow.get("SV_Yesterday_Profit_Top", default_boxes["YESTERDAY_PROFIT"]["top"])),
-                    "right": float(srow.get("SV_Yesterday_Profit_Right", default_boxes["YESTERDAY_PROFIT"]["right"])),
-                    "bottom": float(srow.get("SV_Yesterday_Profit_Bottom", default_boxes["YESTERDAY_PROFIT"]["bottom"])),
+                    "left": U.to_ratio(srow.get("SV_Yesterday_Profit_Left", defaults["YESTERDAY_PROFIT"]["left"]), defaults["YESTERDAY_PROFIT"]["left"]),
+                    "top": U.to_ratio(srow.get("SV_Yesterday_Profit_Top", defaults["YESTERDAY_PROFIT"]["top"]), defaults["YESTERDAY_PROFIT"]["top"]),
+                    "right": U.to_ratio(srow.get("SV_Yesterday_Profit_Right", defaults["YESTERDAY_PROFIT"]["right"]), defaults["YESTERDAY_PROFIT"]["right"]),
+                    "bottom": U.to_ratio(srow.get("SV_Yesterday_Profit_Bottom", defaults["YESTERDAY_PROFIT"]["bottom"]), defaults["YESTERDAY_PROFIT"]["bottom"]),
                 },
                 "APR": {
-                    "left": float(srow.get("SV_APR_Left", default_boxes["APR"]["left"])),
-                    "top": float(srow.get("SV_APR_Top", default_boxes["APR"]["top"])),
-                    "right": float(srow.get("SV_APR_Right", default_boxes["APR"]["right"])),
-                    "bottom": float(srow.get("SV_APR_Bottom", default_boxes["APR"]["bottom"])),
+                    "left": U.to_ratio(srow.get("SV_APR_Left", defaults["APR"]["left"]), defaults["APR"]["left"]),
+                    "top": U.to_ratio(srow.get("SV_APR_Top", defaults["APR"]["top"]), defaults["APR"]["top"]),
+                    "right": U.to_ratio(srow.get("SV_APR_Right", defaults["APR"]["right"]), defaults["APR"]["right"]),
+                    "bottom": U.to_ratio(srow.get("SV_APR_Bottom", defaults["APR"]["bottom"]), defaults["APR"]["bottom"]),
                 },
             }
 
-        default_boxes = {
+        defaults = {
             "TOTAL_LIQUIDITY": {"left": 0.05, "top": 0.18, "right": 0.35, "bottom": 0.27},
             "YESTERDAY_PROFIT": {"left": 0.36, "top": 0.18, "right": 0.62, "bottom": 0.27},
             "APR": {"left": 0.63, "top": 0.18, "right": 0.85, "bottom": 0.27},
         }
+
         if srow is None:
-            return default_boxes
+            return defaults
 
         return {
             "TOTAL_LIQUIDITY": {
-                "left": float(srow.get("SV_Total_Liquidity_Left_PC", default_boxes["TOTAL_LIQUIDITY"]["left"])),
-                "top": float(srow.get("SV_Total_Liquidity_Top_PC", default_boxes["TOTAL_LIQUIDITY"]["top"])),
-                "right": float(srow.get("SV_Total_Liquidity_Right_PC", default_boxes["TOTAL_LIQUIDITY"]["right"])),
-                "bottom": float(srow.get("SV_Total_Liquidity_Bottom_PC", default_boxes["TOTAL_LIQUIDITY"]["bottom"])),
+                "left": U.to_ratio(srow.get("SV_Total_Liquidity_Left_PC", defaults["TOTAL_LIQUIDITY"]["left"]), defaults["TOTAL_LIQUIDITY"]["left"]),
+                "top": U.to_ratio(srow.get("SV_Total_Liquidity_Top_PC", defaults["TOTAL_LIQUIDITY"]["top"]), defaults["TOTAL_LIQUIDITY"]["top"]),
+                "right": U.to_ratio(srow.get("SV_Total_Liquidity_Right_PC", defaults["TOTAL_LIQUIDITY"]["right"]), defaults["TOTAL_LIQUIDITY"]["right"]),
+                "bottom": U.to_ratio(srow.get("SV_Total_Liquidity_Bottom_PC", defaults["TOTAL_LIQUIDITY"]["bottom"]), defaults["TOTAL_LIQUIDITY"]["bottom"]),
             },
             "YESTERDAY_PROFIT": {
-                "left": float(srow.get("SV_Yesterday_Profit_Left_PC", default_boxes["YESTERDAY_PROFIT"]["left"])),
-                "top": float(srow.get("SV_Yesterday_Profit_Top_PC", default_boxes["YESTERDAY_PROFIT"]["top"])),
-                "right": float(srow.get("SV_Yesterday_Profit_Right_PC", default_boxes["YESTERDAY_PROFIT"]["right"])),
-                "bottom": float(srow.get("SV_Yesterday_Profit_Bottom_PC", default_boxes["YESTERDAY_PROFIT"]["bottom"])),
+                "left": U.to_ratio(srow.get("SV_Yesterday_Profit_Left_PC", defaults["YESTERDAY_PROFIT"]["left"]), defaults["YESTERDAY_PROFIT"]["left"]),
+                "top": U.to_ratio(srow.get("SV_Yesterday_Profit_Top_PC", defaults["YESTERDAY_PROFIT"]["top"]), defaults["YESTERDAY_PROFIT"]["top"]),
+                "right": U.to_ratio(srow.get("SV_Yesterday_Profit_Right_PC", defaults["YESTERDAY_PROFIT"]["right"]), defaults["YESTERDAY_PROFIT"]["right"]),
+                "bottom": U.to_ratio(srow.get("SV_Yesterday_Profit_Bottom_PC", defaults["YESTERDAY_PROFIT"]["bottom"]), defaults["YESTERDAY_PROFIT"]["bottom"]),
             },
             "APR": {
-                "left": float(srow.get("SV_APR_Left_PC", default_boxes["APR"]["left"])),
-                "top": float(srow.get("SV_APR_Top_PC", default_boxes["APR"]["top"])),
-                "right": float(srow.get("SV_APR_Right_PC", default_boxes["APR"]["right"])),
-                "bottom": float(srow.get("SV_APR_Bottom_PC", default_boxes["APR"]["bottom"])),
+                "left": U.to_ratio(srow.get("SV_APR_Left_PC", defaults["APR"]["left"]), defaults["APR"]["left"]),
+                "top": U.to_ratio(srow.get("SV_APR_Top_PC", defaults["APR"]["top"]), defaults["APR"]["top"]),
+                "right": U.to_ratio(srow.get("SV_APR_Right_PC", defaults["APR"]["right"]), defaults["APR"]["right"]),
+                "bottom": U.to_ratio(srow.get("SV_APR_Bottom_PC", defaults["APR"]["bottom"]), defaults["APR"]["bottom"]),
             },
         }
 
@@ -367,7 +286,9 @@ class APRPage:
             f"right={crop_right_ratio:.3f}, bottom={crop_bottom_ratio:.3f}"
         )
 
-        smart = self._ocr_smartvault_metrics(file_bytes, self._get_smartvault_boxes(settings_df, project, platform))
+        boxes = self._get_smartvault_boxes(settings_df, project, platform)
+        st.write({"platform_detected": platform, "smartvault_boxes_in_use": boxes})
+        smart = self._ocr_smartvault_metrics(file_bytes, boxes)
 
         st.markdown(f"#### SmartVault {platform.upper()} OCR結果")
         st.image(smart["boxed_preview"], caption=f"赤枠 = {platform} OCR対象範囲", width=500)
