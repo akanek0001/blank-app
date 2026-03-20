@@ -6,7 +6,7 @@ class AppConfig:
     APP_ICON = "🏦"
     JST = timezone(timedelta(hours=9))
 
-    SPREADSHEET_ID = "YOUR_SPREADSHEET_ID"
+    SPREADSHEET_ID = "1z6XuFavFlUMYcsXmASlTgqvDcvNKuhCoSZePb-PHyn0"
 
     PAGE = {
         "DASHBOARD": "dashboard",
