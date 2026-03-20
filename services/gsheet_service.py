@@ -7,23 +7,36 @@ from google.oauth2.service_account import Credentials
 
 
 class GSheetService:
-    def __init__(self, spreadsheet_id: str):
-        self.spreadsheet_id = spreadsheet_id
+    def __init__(self, spreadsheet_id: str | None = None):
+        self.spreadsheet_id = spreadsheet_id or self._get_spreadsheet_id()
         self.gc = self._connect()
-        self.sh = self.gc.open_by_key(spreadsheet_id)
+        self.sh = self.gc.open_by_key(self.spreadsheet_id)
 
         if "gsheet_cache" not in st.session_state:
             st.session_state["gsheet_cache"] = {}
 
+    def _get_spreadsheet_id(self) -> str:
+        try:
+            return str(st.secrets["connections"]["gsheets"]["spreadsheet"]).strip()
+        except Exception as e:
+            raise KeyError(
+                "st.secrets['connections']['gsheets']['spreadsheet'] が見つかりません。"
+            ) from e
+
     def _connect(self):
-        creds_dict = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
-        )
+        try:
+            creds_dict = dict(st.secrets["connections"]["gsheets"]["credentials"])
+        except Exception as e:
+            raise KeyError(
+                "st.secrets['connections']['gsheets']['credentials'] が見つかりません。"
+            ) from e
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return gspread.authorize(creds)
 
     def clear_cache(self):
@@ -36,7 +49,11 @@ class GSheetService:
         try:
             ws = self.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            ws = self.sh.add_worksheet(title=sheet_name, rows=1000, cols=max(20, len(headers)))
+            ws = self.sh.add_worksheet(
+                title=sheet_name,
+                rows=1000,
+                cols=max(20, len(headers)),
+            )
             ws.append_row(headers, value_input_option="USER_ENTERED")
             return
 
