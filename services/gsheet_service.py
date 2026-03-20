@@ -23,21 +23,24 @@ class GSheetService:
                 "st.secrets['connections']['gsheets']['spreadsheet'] が見つかりません。"
             ) from e
 
-    def _connect(self):
-        try:
-            creds_dict = dict(st.secrets["connections"]["gsheets"]["credentials"])
-        except Exception as e:
-            raise KeyError(
-                "st.secrets['connections']['gsheets']['credentials'] が見つかりません。"
-            ) from e
+def _connect(self):
+    import streamlit as st
+    import gspread
+    from google.oauth2.service_account import Credentials
 
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
+    # === 固定Secrets構造に完全対応 ===
+    try:
+        creds_dict = dict(st.secrets["connections"]["gsheets"]["credentials"])
+    except Exception:
+        raise Exception("secrets.toml の connections.gsheets.credentials が存在しません")
 
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        return gspread.authorize(creds)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
 
     def clear_cache(self):
         st.session_state["gsheet_cache"] = {}
