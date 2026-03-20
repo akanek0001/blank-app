@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from controller.app_controller import AppController
 
 
-def main():
+def main() -> None:
     AppController().run()
 
 

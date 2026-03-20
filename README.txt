@@ -1,11 +1,28 @@
-このZIPには以下が入っています。
+このZIPは、現時点での統合版です。
 
-- app.py
-  SmartVault OCR → APR原資自動セット対応版
-- README.txt
+含まれるもの
+- Google Sheets 接続
+- Dashboard / APR / Cash / Admin / Help ページ
+- SmartVault mobile OCR
+- 3領域OCR
+- OCR座標のHelp画面保存
+- 本日APR重複防止
+- 本日APRリセット
+- 任意のLINE送信
 
-追加で必要なシート
-- APR_Source_History
+未実装 / 未検証
+- SmartVault PC OCR
+- Compound_Timing 本番実装
+- 管理者A〜D namespace 完全切替
+- 本番LINE文面の最終整形
+- 全実環境での動作検証
 
-APR_Source_History ヘッダー
-Datetime_JST,Project_Name,Source_Type,Amount,Period_From,Period_To,Note,Admin_Name,Admin_Namespace
+必要なSecrets
+[gcp_service_account]
+...
+
+[ocrspace]
+api_key = "..."
+
+[line.tokens]
+A = "..."
