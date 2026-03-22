@@ -21,7 +21,6 @@ class AppController:
         self.gs: GSheetService | None = None
         self.repo: Repository | None = None
         self.store: DataStore | None = None
-
         self.dashboard: DashboardPage | None = None
         self.apr: APRPage | None = None
         self.cash: CashPage | None = None
@@ -30,7 +29,12 @@ class AppController:
         self.sidebar: Sidebar | None = None
 
     def setup_services(self) -> None:
-        self.gs = GSheetService(AppConfig.SPREADSHEET_ID)
+        try:
+            self.gs = GSheetService(AppConfig.SPREADSHEET_ID)
+        except Exception as e:
+            st.error(f"Spreadsheet を開けません。: {e}")
+            st.stop()
+
         self.repo = Repository(self.gs)
         self.store = DataStore(self.repo)
 
@@ -49,7 +53,7 @@ class AppController:
         st.set_page_config(
             page_title=AppConfig.APP_TITLE,
             page_icon=AppConfig.APP_ICON,
-            layout="wide",
+            layout=AppConfig.PAGE_LAYOUT,
         )
 
         self.setup_services()
@@ -57,24 +61,15 @@ class AppController:
         self.sidebar.render()
 
         page = st.session_state["page"]
+        data = self.store.load(force=False)
 
         if page == AppConfig.PAGE["DASHBOARD"]:
             self.dashboard.render()
         elif page == AppConfig.PAGE["APR"]:
             self.apr.render()
         elif page == AppConfig.PAGE["CASH"]:
-            data = self.store.load()
-            self.cash.render(
-                data["settings_df"],
-                data["members_df"],
-                data["ledger_df"],
-            )
+            self.cash.render(data["settings_df"], data["members_df"], data["ledger_df"])
         elif page == AppConfig.PAGE["ADMIN"]:
-            data = self.store.load()
-            self.admin.render(
-                data["settings_df"],
-                data["members_df"],
-                data["line_users_df"],
-            )
+            self.admin.render(data["settings_df"], data["members_df"], data["line_users_df"])
         elif page == AppConfig.PAGE["HELP"]:
             self.help.render()
