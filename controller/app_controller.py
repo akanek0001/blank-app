@@ -11,11 +11,12 @@ from engine.finance_engine import FinanceEngine
 from repository.repository import Repository
 from services.gsheet_service import GSheetService
 from store.datastore import DataStore
-from ui.dashboard import DashboardPage
-from ui.apr import APRPage
-from ui.cash import CashPage
-from ui.admin import AdminPage
-from ui.help import HelpPage
+
+from app_pages.dashboard_page import DashboardPage
+from app_pages.apr_page import APRPage
+from app_pages.cash_page import CashPage
+from app_pages.admin_page import AdminPage
+from app_pages.help_page import HelpPage
 
 
 class AppController:
